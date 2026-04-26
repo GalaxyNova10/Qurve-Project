@@ -1,0 +1,440 @@
+/* Urbanist Font - Must be first before Tailwind */
+@import url('https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Bloomberg Terminal Theme - Professional Trading */
+  --background: 220 20% 4%;
+  --foreground: 0 0% 100%;
+  --card: 220 15% 8%;
+  --card-foreground: 0 0% 100%;
+  --popover: 220 15% 8%;
+  --popover-foreground: 0 0% 100%;
+  --primary: 24 100% 50%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 217 91% 36%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 220 12% 12%;
+  --muted-foreground: 215 15% 55%;
+  --accent: 24 100% 50%;
+  --accent-foreground: 0 0% 100%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 220 12% 15%;
+  --input: 220 12% 15%;
+  --ring: 24 100% 50%;
+  --radius: 0.5rem;
+  
+  /* Bloomberg Terminal Colors */
+  --terminal-bg: #0d1117;
+  --terminal-card: #161b22;
+  --terminal-border: #21262d;
+  --terminal-text: #e6edf3;
+  --terminal-muted: #7d8590;
+  --terminal-orange: #ff6b35;
+  --terminal-blue: #58a6ff;
+  
+  /* TradingView Style Colors - Green Up, Red Down */
+  --tv-green: #22c55e;
+  --tv-green-bright: #16a34a;
+  --tv-red: #f2362c;
+  --tv-red-bright: #dc2626;
+  --tv-wick: #6b7280;
+  --tv-border: #374151;
+  
+  /* Legacy Colors (for compatibility) */
+  --navy-deep: #0d1117;
+  --navy-card: #161b22;
+  --orange-accent: #ff6b35;
+  --blue-accent: #58a6ff;
+  --green-positive: #22c55e;
+  --red-negative: #f2362c;
+  --text-primary: #e6edf3;
+  --text-secondary: #7d8590;
+  --border-subtle: #21262d;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Urbanist', sans-serif;
+  background: var(--terminal-bg);
+  background-attachment: fixed;
+  color: var(--terminal-text);
+  min-height: 100vh;
+}
+
+/* TradingView Candlestick Chart Styles */
+.tv-chart-container {
+  background: var(--terminal-card);
+  border: 1px solid var(--terminal-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+/* Candle Colors - TradingView Style */
+.candle-up {
+  background: var(--tv-green);
+  border-color: var(--tv-green-bright);
+}
+
+.candle-down {
+  background: var(--tv-red);
+  border-color: var(--tv-red-bright);
+}
+
+.wick-up {
+  background: var(--tv-green);
+}
+
+.wick-down {
+  background: var(--tv-red);
+}
+
+/* Volume Bars */
+.volume-up {
+  background: rgba(34, 197, 94, 0.5);
+}
+
+.volume-down {
+  background: rgba(242, 54, 44, 0.5);
+}
+
+/* Chart Grid Lines */
+.chart-grid {
+  stroke: var(--terminal-border);
+  stroke-width: 1;
+}
+
+/* Price Scale */
+.price-scale {
+  color: var(--terminal-muted);
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+}
+
+/* Crosshair */
+.crosshair {
+  stroke: var(--terminal-orange);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+/* Tooltip - Bloomberg Style */
+.bloomberg-tooltip {
+  background: rgba(13, 17, 23, 0.95);
+  border: 1px solid var(--terminal-border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: var(--terminal-text);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+.bloomberg-tooltip .label {
+  color: var(--terminal-muted);
+}
+
+.bloomberg-tooltip .value {
+  color: var(--terminal-text);
+  font-weight: 600;
+}
+
+.bloomberg-tooltip .positive {
+  color: var(--tv-green);
+}
+
+.bloomberg-tooltip .negative {
+  color: var(--tv-red);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0a0f1c;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1E293B;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #FF6200;
+}
+
+/* Glassmorphism Card */
+.glass-card {
+  background: rgba(17, 24, 39, 0.7);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+}
+
+/* Gradient Border */
+.gradient-border {
+  position: relative;
+  background: linear-gradient(135deg, #111827 0%, #0f172a 100%);
+  border-radius: 1rem;
+}
+
+.gradient-border::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 1rem;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255, 98, 0, 0.3), rgba(0, 72, 180, 0.3));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Glow Effects */
+.glow-orange {
+  box-shadow: 0 0 20px rgba(255, 98, 0, 0.2), 0 0 40px rgba(255, 98, 0, 0.1);
+}
+
+.glow-blue {
+  box-shadow: 0 0 20px rgba(0, 72, 180, 0.2), 0 0 40px rgba(0, 72, 180, 0.1);
+}
+
+/* Animated Gradient Text */
+.gradient-text {
+  background: linear-gradient(135deg, #FF6200 0%, #0048B4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Chart Container */
+.chart-container {
+  position: relative;
+  overflow: hidden;
+}
+
+.chart-container::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 100px;
+  background: linear-gradient(to top, rgba(17, 24, 39, 0.8), transparent);
+  pointer-events: none;
+}
+
+/* Status Indicators */
+.status-positive {
+  color: #10B981;
+  text-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
+.status-negative {
+  color: #EF4444;
+  text-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+/* Button Styles */
+.btn-primary {
+  background: linear-gradient(135deg, #FF6200 0%, #FF8533 100%);
+  color: white;
+  font-weight: 600;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.75rem;
+  transition: all 0.3s ease;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(255, 98, 0, 0.3);
+}
+
+/* Sidebar */
+.sidebar-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  border-radius: 0.75rem;
+  color: #94A3B8;
+  transition: all 0.3s ease;
+  cursor: pointer;
+}
+
+.sidebar-item:hover {
+  background: rgba(255, 98, 0, 0.1);
+  color: #FF6200;
+}
+
+.sidebar-item.active {
+  background: linear-gradient(135deg, rgba(255, 98, 0, 0.2), rgba(0, 72, 180, 0.2));
+  color: #FFFFFF;
+  border: 1px solid rgba(255, 98, 0, 0.3);
+}
+
+/* Table Styles */
+.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 1rem;
+  color: #94A3B8;
+  font-weight: 500;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #1E293B;
+}
+
+.data-table td {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(30, 41, 59, 0.5);
+}
+
+.data-table tr:hover td {
+  background: rgba(255, 98, 0, 0.03);
+}
+
+/* Animations */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 98, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(255, 98, 0, 0.4);
+  }
+}
+
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.5s ease-out forwards;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.3s ease-out forwards;
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Grid Pattern Background */
+.grid-pattern {
+  background-image: 
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 50px 50px;
+}
+
+/* Loading Skeleton */
+.skeleton {
+  background: linear-gradient(90deg, #1E293B 25%, #334155 50%, #1E293B 75%);
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s infinite;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* Tooltip */
+.custom-tooltip {
+  background: rgba(17, 24, 39, 0.95);
+  border: 1px solid rgba(255, 98, 0, 0.3);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+  font-size: 0.875rem;
+  color: #FFFFFF;
+  backdrop-filter: blur(10px);
+}
+
+/* Progress Bar */
+.progress-bar {
+  height: 4px;
+  background: #1E293B;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #FF6200, #0048B4);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+/* Badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-green {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10B981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.badge-red {
+  background: rgba(239, 68, 68, 0.1);
+  color: #EF4444;
+  border: 1px solid rgba(239, 68, 68, 0.2);
+}
+
+.badge-orange {
+  background: rgba(255, 98, 0, 0.1);
+  color: #FF6200;
+  border: 1px solid rgba(255, 98, 0, 0.2);
+}

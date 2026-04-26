@@ -1,0 +1,43 @@
+services:
+  backend:
+    build:
+      context: ./qubo-backend
+    env_file:
+      - ./qubo-backend/.env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./output:/output
+      - ./qubo-backend/checkpoints:/app/checkpoints
+    environment:
+      OUTPUT_DIR: /output
+      CHECKPOINT_DIR: /app/checkpoints
+      JOBS_DIR: /output/jobs
+      DATABASE_URL: postgresql+asyncpg://qubo_user:qubo_password@db:5432/qubo_portfolio
+    depends_on:
+      - db
+      - redis
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: qubo_user
+      POSTGRES_PASSWORD: qubo_password
+      POSTGRES_DB: qubo_portfolio
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U qubo_user -d qubo_portfolio"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
