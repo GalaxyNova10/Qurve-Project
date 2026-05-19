@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Eye, EyeOff, Mail, Lock, ArrowRight, Github, Chrome } from 'lucide-react';
+import { Eye, EyeOff, User, Lock, ArrowRight, Github, Chrome } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
 
@@ -23,15 +23,11 @@ export default function Login() {
     const newErrors: { email?: string; password?: string } = {};
     
     if (!email) {
-      newErrors.email = 'Email is required';
-    } else if (!/\S+@\S+\.\S+/.test(email)) {
-      newErrors.email = 'Please enter a valid email';
+      newErrors.email = 'Username or email is required';
     }
     
     if (!password) {
       newErrors.password = 'Password is required';
-    } else if (password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
     }
     
     setErrors(newErrors);
@@ -68,11 +64,11 @@ export default function Login() {
 
       {/* Social Login */}
       <div className="grid grid-cols-2 gap-3 mb-6">
-        <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#111827] border border-[#1E293B] text-white hover:border-[#FF6200]/50 transition-colors">
+        <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#111827] border border-[#1E293B] text-white hover:border-[#7C3AED]/50 transition-colors">
           <Chrome className="w-5 h-5" />
           <span className="text-sm">Google</span>
         </button>
-        <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#111827] border border-[#1E293B] text-white hover:border-[#FF6200]/50 transition-colors">
+        <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#111827] border border-[#1E293B] text-white hover:border-[#7C3AED]/50 transition-colors">
           <Github className="w-5 h-5" />
           <span className="text-sm">GitHub</span>
         </button>
@@ -87,18 +83,18 @@ export default function Login() {
 
       {/* Form */}
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Email */}
+        {/* Username or Email */}
         <div>
           <label htmlFor="email" className="block text-sm font-medium text-white mb-2">
-            Email Address <span className="text-[#EF4444]">*</span>
+            Username or Email <span className="text-[#EF4444]">*</span>
           </label>
           <div className="relative">
-            <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" aria-hidden="true" />
+            <User className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#64748B]" aria-hidden="true" />
             <input
               id="email"
               name="email"
-              type="email"
-              autoComplete="email"
+              type="text"
+              autoComplete="username"
               required
               aria-required="true"
               aria-invalid={errors.email ? 'true' : 'false'}
@@ -108,7 +104,7 @@ export default function Login() {
                 setEmail(e.target.value);
                 if (errors.email) setErrors({ ...errors, email: undefined });
               }}
-              placeholder="Enter your email address"
+              placeholder="Enter username or email"
               className={`w-full pl-12 pr-4 py-3 bg-[#111827] border rounded-xl text-white placeholder:text-[#64748B] focus:outline-none focus:border-[#FF6200]/50 transition-colors ${
                 errors.email ? 'border-[#EF4444]' : 'border-[#1E293B]'
               }`}
@@ -170,11 +166,11 @@ export default function Login() {
               checked={rememberMe}
               onChange={(e) => setRememberMe(e.target.checked)}
               aria-label="Remember me on this device"
-              className="w-4 h-4 rounded border-[#1E293B] bg-[#111827] text-[#FF6200] focus:ring-[#FF6200]/50"
+              className="w-4 h-4 rounded border-[#1E293B] bg-[#111827] text-[#7C3AED] focus:ring-[#7C3AED]/50"
             />
             <span className="text-[#94A3B8] text-sm">Remember me</span>
           </label>
-          <Link to="/forgot-password" className="text-[#FF6200] text-sm hover:underline">
+          <Link to="/forgot-password" className="text-[#7C3AED] text-sm hover:underline">
             Forgot password?
           </Link>
         </div>
@@ -183,7 +179,7 @@ export default function Login() {
         <Button
           type="submit"
           disabled={isLoading}
-          className="w-full bg-gradient-to-r from-[#FF6200] to-[#FF8533] text-white hover:opacity-90 py-3 h-12"
+          className="w-full bg-gradient-to-r from-[#7C3AED] to-[#8B5CF6] text-white hover:opacity-90 py-3 h-12"
         >
           {isLoading ? (
             <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -199,7 +195,7 @@ export default function Login() {
       {/* Sign Up Link */}
       <p className="mt-6 text-center text-[#94A3B8]">
         Don't have an account?{' '}
-        <Link to="/register" className="text-[#FF6200] hover:underline font-medium">
+        <Link to="/register" className="text-[#7C3AED] hover:underline font-medium">
           Create one
         </Link>
       </p>
@@ -208,7 +204,7 @@ export default function Login() {
       <div className="mt-6 p-4 rounded-xl bg-[#111827] border border-[#1E293B]">
         <p className="text-[#64748B] text-xs mb-2">Demo Credentials:</p>
         <div className="flex items-center justify-between text-sm">
-          <code className="text-[#94A3B8]">demo@qubo.ai</code>
+          <code className="text-[#94A3B8]">demo@qurve.ai</code>
           <code className="text-[#94A3B8]">password123</code>
         </div>
       </div>

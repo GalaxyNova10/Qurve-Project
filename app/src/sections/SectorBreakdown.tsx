@@ -14,7 +14,7 @@ interface SectorBreakdownProps {
 const MAX_SECTOR_EXPOSURE = 0.25; // 25% max
 
 const sectorColors: { [key: string]: string } = {
-  'Financial': '#FF6200',
+  'Financial': '#7C3AED',
   'IT': '#0048B4',
   'Consumer': '#10B981',
   'Energy': '#F59E0B',
@@ -167,7 +167,7 @@ const SectorBreakdown = ({ sectors }: SectorBreakdownProps) => {
         {/* Constraint Info */}
         <div className="mt-4 p-3 bg-[#0048B4]/10 border border-[#0048B4]/20 rounded-lg">
           <p className="text-xs text-[#94A3B8]">
-            <span className="text-[#0048B4] font-semibold">QUBO Constraint:</span>
+            <span className="text-[#0048B4] font-semibold">Qurve Constraint:</span>
             {' '}Sector exposure encoded as quadratic penalty term with slack variables
           </p>
         </div>

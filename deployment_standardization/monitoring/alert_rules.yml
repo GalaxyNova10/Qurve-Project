@@ -1,0 +1,358 @@
+groups:
+  # System Health Alerts
+  - name: system_health
+    rules:
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: "{{ $labels.job }}"
+        annotations:
+          summary: "Service {{ $labels.instance }} is down"
+          description: "Service {{ $labels.instance }} has been down for more than 1 minute."
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: "system"
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }} for more than 5 minutes."
+
+      - alert: CriticalCPUUsage
+        expr: 100 - (avg by(instance) (irate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 95
+        for: 2m
+        labels:
+          severity: critical
+          service: "system"
+        annotations:
+          summary: "Critical CPU usage on {{ $labels.instance }}"
+          description: "CPU usage is {{ $value }}% on {{ $labels.instance }} for more than 2 minutes."
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: "system"
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }} for more than 5 minutes."
+
+      - alert: CriticalMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          service: "system"
+        annotations:
+          summary: "Critical memory usage on {{ $labels.instance }}"
+          description: "Memory usage is {{ $value }}% on {{ $labels.instance }} for more than 2 minutes."
+
+      - alert: HighDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 80
+        for: 10m
+        labels:
+          severity: warning
+          service: "system"
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }} for more than 10 minutes."
+
+      - alert: CriticalDiskUsage
+        expr: (1 - (node_filesystem_avail_bytes{fstype!="tmpfs"} / node_filesystem_size_bytes{fstype!="tmpfs"})) * 100 > 95
+        for: 5m
+        labels:
+          severity: critical
+          service: "system"
+        annotations:
+          summary: "Critical disk usage on {{ $labels.instance }}"
+          description: "Disk usage is {{ $value }}% on {{ $labels.instance }} for more than 5 minutes."
+
+  # Application Performance Alerts
+  - name: application_performance
+    rules:
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          service: "application"
+        annotations:
+          summary: "High response time for {{ $labels.service }}"
+          description: "95th percentile response time is {{ $value }}s for {{ $labels.service }}."
+
+      - alert: CriticalResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 5.0
+        for: 2m
+        labels:
+          severity: critical
+          service: "application"
+        annotations:
+          summary: "Critical response time for {{ $labels.service }}"
+          description: "95th percentile response time is {{ $value }}s for {{ $labels.service }}."
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: "application"
+        annotations:
+          summary: "High error rate for {{ $labels.service }}"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.service }}."
+
+      - alert: CriticalErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.10
+        for: 2m
+        labels:
+          severity: critical
+          service: "application"
+        annotations:
+          summary: "Critical error rate for {{ $labels.service }}"
+          description: "Error rate is {{ $value | humanizePercentage }} for {{ $labels.service }}."
+
+  # Database Alerts
+  - name: database_health
+    rules:
+      - alert: DatabaseDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: "database"
+        annotations:
+          summary: "Database is down"
+          description: "PostgreSQL database has been down for more than 1 minute."
+
+      - alert: HighDatabaseConnections
+        expr: pg_stat_database_numbackends > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: "database"
+        annotations:
+          summary: "High database connections"
+          description: "Database has {{ $value }} active connections."
+
+      - alert: CriticalDatabaseConnections
+        expr: pg_stat_database_numbackends > 90
+        for: 2m
+        labels:
+          severity: critical
+          service: "database"
+        annotations:
+          summary: "Critical database connections"
+          description: "Database has {{ $value }} active connections."
+
+      - alert: SlowDatabaseQueries
+        expr: pg_stat_statements_mean_exec_time_ms > 1000
+        for: 5m
+        labels:
+          severity: warning
+          service: "database"
+        annotations:
+          summary: "Slow database queries"
+          description: "Average query execution time is {{ $value }}ms."
+
+      - alert: CriticalSlowDatabaseQueries
+        expr: pg_stat_statements_mean_exec_time_ms > 5000
+        for: 2m
+        labels:
+          severity: critical
+          service: "database"
+        annotations:
+          summary: "Critical slow database queries"
+          description: "Average query execution time is {{ $value }}ms."
+
+  # Cache Alerts
+  - name: cache_health
+    rules:
+      - alert: CacheDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: "cache"
+        annotations:
+          summary: "Redis cache is down"
+          description: "Redis cache has been down for more than 1 minute."
+
+      - alert: HighCacheMemoryUsage
+        expr: (redis_memory_used_bytes / redis_memory_max_bytes) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+          service: "cache"
+        annotations:
+          summary: "High Redis memory usage"
+          description: "Redis memory usage is {{ $value }}%."
+
+      - alert: CriticalCacheMemoryUsage
+        expr: (redis_memory_used_bytes / redis_memory_max_bytes) * 100 > 95
+        for: 2m
+        labels:
+          severity: critical
+          service: "cache"
+        annotations:
+          summary: "Critical Redis memory usage"
+          description: "Redis memory usage is {{ $value }}%."
+
+      - alert: HighCacheEvictionRate
+        expr: rate(redis_evicted_keys_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          service: "cache"
+        annotations:
+          summary: "High Redis eviction rate"
+          description: "Redis eviction rate is {{ $value }} keys per second."
+
+  # QUBO Platform Specific Alerts
+  - name: qubo_platform
+    rules:
+      - alert: BenchmarkExecutionFailure
+        expr: increase(qubo_benchmark_executions_failed_total[5m]) > 5
+        for: 2m
+        labels:
+          severity: warning
+          service: "qubo-platform"
+        annotations:
+          summary: "High benchmark execution failure rate"
+          description: "{{ $value }} benchmark executions failed in the last 5 minutes."
+
+      - alert: CriticalBenchmarkExecutionFailure
+        expr: increase(qubo_benchmark_executions_failed_total[2m]) > 10
+        for: 1m
+        labels:
+          severity: critical
+          service: "qubo-platform"
+        annotations:
+          summary: "Critical benchmark execution failure rate"
+          description: "{{ $value }} benchmark executions failed in the last 2 minutes."
+
+      - alert: QPUExecutionFailure
+        expr: increase(qubo_qpu_executions_failed_total[5m]) > 2
+        for: 2m
+        labels:
+          severity: warning
+          service: "qubo-platform"
+        annotations:
+          summary: "QPU execution failures"
+          description: "{{ $value }} QPU executions failed in the last 5 minutes."
+
+      - alert: CloudExecutionFailure
+        expr: increase(qubo_cloud_executions_failed_total[5m]) > 3
+        for: 2m
+        labels:
+          severity: warning
+          service: "qubo-platform"
+        annotations:
+          summary: "Cloud execution failures"
+          description: "{{ $value }} cloud executions failed in the last 5 minutes."
+
+      - alert: ReplaySystemFailure
+        expr: increase(qubo_replay_requests_failed_total[5m]) > 2
+        for: 2m
+        labels:
+          severity: warning
+          service: "qubo-platform"
+        annotations:
+          summary: "Replay system failures"
+          description: "{{ $value }} replay requests failed in the last 5 minutes."
+
+      - alert: UserQuotaExhaustion
+        expr: qubo_user_quota_utilization_ratio > 0.95
+        for: 5m
+        labels:
+          severity: warning
+          service: "qubo-platform"
+        annotations:
+          summary: "User quota exhaustion"
+          description: "User quota utilization is {{ $value | humanizePercentage }}."
+
+      - alert: CriticalUserQuotaExhaustion
+        expr: qubo_user_quota_utilization_ratio > 0.99
+        for: 1m
+        labels:
+          severity: critical
+          service: "qubo-platform"
+        annotations:
+          summary: "Critical user quota exhaustion"
+          description: "User quota utilization is {{ $value | humanizePercentage }}."
+
+      - alert: GovernanceViolation
+        expr: increase(qubo_governance_violations_total[5m]) > 1
+        for: 1m
+        labels:
+          severity: critical
+          service: "qubo-platform"
+        annotations:
+          summary: "Governance violation detected"
+          description: "{{ $value }} governance violations detected in the last 5 minutes."
+
+      - alert: SecurityEventDetected
+        expr: increase(qubo_security_events_total[5m]) > 3
+        for: 2m
+        labels:
+          severity: critical
+          service: "qubo-platform"
+        annotations:
+          summary: "Security events detected"
+          description: "{{ $value }} security events detected in the last 5 minutes."
+
+  # Business Metrics Alerts
+  - name: business_metrics
+    rules:
+      - alert: LowUserActivity
+        expr: rate(qubo_user_sessions_created_total[1h]) < 0.1
+        for: 15m
+        labels:
+          severity: warning
+          service: "business"
+        annotations:
+          summary: "Low user activity"
+          description: "User session creation rate is {{ $value }} per hour."
+
+      - alert: HighExecutionQueueLength
+        expr: qubo_execution_queue_length > 50
+        for: 5m
+        labels:
+          severity: warning
+          service: "business"
+        annotations:
+          summary: "High execution queue length"
+          description: "Execution queue has {{ $value }} pending jobs."
+
+      - alert: CriticalExecutionQueueLength
+        expr: qubo_execution_queue_length > 100
+        for: 2m
+        labels:
+          severity: critical
+          service: "business"
+        annotations:
+          summary: "Critical execution queue length"
+          description: "Execution queue has {{ $value }} pending jobs."
+
+      - alert: LowSuccessRate
+        expr: rate(qubo_benchmark_executions_success_total[5m]) / rate(qubo_benchmark_executions_total[5m]) < 0.90
+        for: 5m
+        labels:
+          severity: warning
+          service: "business"
+        annotations:
+          summary: "Low benchmark success rate"
+          description: "Benchmark success rate is {{ $value | humanizePercentage }}."
+
+      - alert: CriticalLowSuccessRate
+        expr: rate(qubo_benchmark_executions_success_total[5m]) / rate(qubo_benchmark_executions_total[5m]) < 0.80
+        for: 2m
+        labels:
+          severity: critical
+          service: "business"
+        annotations:
+          summary: "Critical low benchmark success rate"
+          description: "Benchmark success rate is {{ $value | humanizePercentage }}."

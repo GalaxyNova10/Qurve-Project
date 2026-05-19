@@ -5,8 +5,50 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
-SolverName = Literal["classical", "sb", "neal", "dwave_hybrid", "dwave_qpu", "qiskit", "qiskit_qaoa", "hybrid"]
+SolverName = Literal[
+    "auto", "gpu", "classical", "sb", "neal",
+    "dwave", "dwave_hybrid", "dwave_qpu", "dwave_local",
+    "qiskit", "qiskit_qaoa", "qiskit_local",
+    "braket", "braket_local",
+    "hybrid",
+    "AWS_BRAKET_TN1", "AWS_BRAKET_SV1", "AWS_BRAKET_LOCAL", "AWS_BRAKET_CLOUD", "AWS_BRAKET_DM1"
+]
 
+BenchmarkMode = Literal[
+    "FAST", "BALANCED", "RESEARCH", "STRESS", "CLOUD_ONLY", "DETERMINISTIC",
+    "benchmark_fast", "benchmark_balanced", "benchmark_accuracy"
+]
+
+class ExecutionProvenance(BaseModel):
+    requested_solver: str
+    actual_solver: str
+    execution_origin: str
+    repair_used: bool = False
+    fallback_triggered: bool = False
+    benchmark_mode: str | None = None
+
+class BenchmarkFingerprint(BaseModel):
+    semantic_version: str = "v1.0"
+    portfolio_hash: str
+    covariance_hash: str
+    constraint_hash: str
+    solver_config_hash: str
+    normalization_version: str = "v1.0"
+
+class OperationalCertification(BaseModel):
+    status: Literal["CERTIFIED", "DEGRADED", "FAILED"]
+    latency_ok: bool
+    reliability_ok: bool
+    stability_ok: bool
+    reason: str | None = None
+
+class ScientificCertification(BaseModel):
+    status: Literal["CERTIFIED", "RESEARCH_GRADE", "UX_GRADE", "NON_COMPARABLE", "STRONG_CONVERGENCE"]
+    feasibility_ok: bool
+    approximation_ok: bool
+    decode_integrity_ok: bool
+    comparability_ok: bool
+    reason: str | None = None
 
 class SolverRequest(BaseModel):
     mu: list[float]
@@ -17,9 +59,16 @@ class SolverRequest(BaseModel):
     max_sector_exposure: float = Field(default=0.25, ge=0.05, le=1.0)
     risk_tolerance: float = Field(default=0.5, ge=0.0, le=10.0)
     binary_bits: int = Field(default=7, ge=2, le=10)
-    solver: SolverName = "sb"
+    solver: SolverName = "auto"
     trajectories: int = Field(default=256, ge=1, le=4096)
     time_limit_seconds: int | None = Field(default=None, ge=1, le=3600)
+    benchmark_mode: BenchmarkMode | None = None
+    warm_start_params: list[float] | None = None
+    warm_start_weights: list[float] | None = None
+    warm_start_energy: float | None = None
+
+class BenchmarkRequest(SolverRequest):
+    benchmark_mode: BenchmarkMode = Field(..., description="Benchmark mode is mandatory for scientific integrity")
 
     @field_validator("sigma")
     @classmethod
@@ -41,14 +90,17 @@ class SolverRequest(BaseModel):
 
 class SolverRunMetadata(BaseModel):
     solver: str
-    bqm_backend: str
-    qubo_variables: int
-    linear_terms: int
-    quadratic_terms: int
-    solve_time_ms: float
+    actual_solver_used: str | None = None
+    bqm_backend: str | None = None
+    qubo_variables: int | None = None
+    linear_terms: int | None = None
+    quadratic_terms: int | None = None
+    solve_time_ms: float | None = None
     reads: int | None = None
+    num_reads: int | None = None
     time_limit_seconds: int | None = None
     energy: float | None = None
+    objective_span: float | None = None
     chain_break_fraction: float | None = None
     fallback_reason: str | None = None
     quantum_backend: str | None = None
@@ -58,4 +110,35 @@ class SolverRunMetadata(BaseModel):
     is_hybrid: bool | None = None
     qiskit_max_assets: int | None = None
     qiskit_max_binary_bits: int | None = None
+    braket_max_assets: int | None = None
+    braket_max_binary_bits: int | None = None
+    strategy: str | None = None
     eligibility_reason: str | None = None
+    
+    # Execution Status
+    execution_status: str = "success"
+    optimization_status: str = "success"
+    scientific_comparability: bool = True
+    error: str | None = None
+    
+    # Cloud Convergence Metadata
+    execution_origin: str | None = None
+    fallback_triggered: bool = False
+    task_arn: str | None = None
+    device_arn: str | None = None
+    execution_mode: str | None = None
+    
+    worker_state: str | None = None
+    
+    # Feasibility diagnostics
+    feasibility_native: float | None = None
+    feasibility_final: float | None = None
+    strict_positive_allocation_ratio: float | None = None
+    energy_inversion_detected: bool | None = None
+    qaoa_depth: int | None = None
+    adaptive_shots: int | None = None
+    penalty_scale: float | None = None
+    best_energy: float | None = None
+    avg_energy: float | None = None
+    energy_std: float | None = None
+    fallback_chain: list[str] = Field(default_factory=list)

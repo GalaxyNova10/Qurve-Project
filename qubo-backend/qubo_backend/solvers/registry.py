@@ -7,18 +7,23 @@ from qubo_backend.optimization.bqm_builder import build_portfolio_bqm
 from qubo_backend.optimization.contracts import SolverRequest
 from qubo_backend.optimization.portfolio import PortfolioSolution, solve_locally
 
-from .classical_solver import solve_classical
-from .dwave_solver import dwave_status, solve_dwave
-from .qiskit_solver import qiskit_status, solve_qiskit_qaoa
-
-# New Local Quantum Simulators
-from optimization.dwave_solver import solve_with_dwave_local
-from optimization.qiskit_solver import solve_with_qiskit_local
+from qubo_backend.optimization.solver_router import route_and_solve
+from qubo_backend.optimization.dwave_solver import dwave_status
+from qubo_backend.optimization.qiskit_solver import qiskit_status
+from qubo_backend.optimization.braket_solver import braket_status
+from qubo_backend.optimization.dwave_sa_solver import get_neal_sa_status
 
 
 def available_solvers(settings: Settings | None = None) -> list[dict]:
     settings = settings or get_settings()
     return [
+        {
+            "id": "auto",
+            "label": "Auto (Smart Router)",
+            "status": "available",
+            "production": True,
+            "description": "Automatically routes to optimal solver based on problem size.",
+        },
         {
             "id": "classical",
             "label": "Classical Feasible Fallback",
@@ -28,15 +33,15 @@ def available_solvers(settings: Settings | None = None) -> list[dict]:
         },
         {
             "id": "sb",
-            "label": "Local Simulated Bifurcation Fallback",
+            "label": "GPU Accelerated (Simulated Bifurcation)",
             "status": "available",
             "production": True,
-            "description": "Legacy alias for the local feasibility-preserving path unless SB runtime is configured.",
+            "description": "High-performance PyTorch solver for large portfolios (N > 50).",
         },
         {
             "id": "neal",
             "label": "D-Wave Neal Simulated Annealing",
-            "status": _optional_status("neal"),
+            "status": get_neal_sa_status(),
             "production": True,
             "description": "Local CPU simulated annealing for dimod BQMs with feasibility repair.",
         },
@@ -82,6 +87,41 @@ def available_solvers(settings: Settings | None = None) -> list[dict]:
             "production": False,
             "description": "Local QAOA simulator via Qiskit Aer (No API key needed).",
         },
+        {
+            "id": "braket",
+            "label": "AWS Braket LocalSimulator (QAOA)",
+            "status": _braket_status(),
+            "production": False,
+            "description": "Zero-cost local QAOA via Amazon Braket LocalSimulator. Capped to ≤8 assets.",
+        },
+        {
+            "id": "AWS_BRAKET_TN1",
+            "label": "AWS Braket TN1 (Cloud Simulator)",
+            "status": _braket_status(),
+            "production": True,
+            "description": "High-performance Tensor Network simulator in the AWS cloud.",
+        },
+        {
+            "id": "AWS_BRAKET_SV1",
+            "label": "AWS Braket SV1 (Cloud Simulator)",
+            "status": _braket_status(),
+            "production": True,
+            "description": "State Vector simulator in the AWS cloud for up to 34 qubits.",
+        },
+        {
+            "id": "AWS_BRAKET_DM1",
+            "label": "AWS Braket DM1 (Cloud Simulator)",
+            "status": _braket_status(),
+            "production": True,
+            "description": "Density Matrix simulator in the AWS cloud for noise simulation.",
+        },
+        {
+            "id": "AWS_BRAKET_LOCAL",
+            "label": "AWS Braket Local (Integrated)",
+            "status": _braket_status(),
+            "production": False,
+            "description": "Integrated local Braket simulation with full telemetry.",
+        },
     ]
 
 
@@ -95,106 +135,20 @@ def _optional_status(module_name: str) -> str:
         return f"error:{redact_secret(exc)}"
 
 
+def _braket_status() -> str:
+    try:
+        import braket  # noqa: F401
+        return "available"
+    except ImportError:
+        return "not_installed"
+    except Exception as exc:
+        return f"error:{redact_secret(exc)}"
+
+
 def solve(request: SolverRequest, settings: Settings | None = None) -> PortfolioSolution:
+    """Route and execute a solver request. Delegates to solver_router."""
     settings = settings or get_settings()
-    if request.solver in {"classical", "sb"}:
-        return solve_classical(request, solver_name=request.solver)
-    if request.solver == "neal":
-        return _solve_with_neal(request)
-    if request.solver == "dwave_hybrid":
-        return solve_dwave(request, settings, direct_qpu=False)
-    if request.solver == "dwave_qpu":
-        return solve_dwave(request, settings, direct_qpu=True)
-    if request.solver in {"qiskit", "qiskit_qaoa"}:
-        return solve_qiskit_qaoa(request, settings)
-    if request.solver == "hybrid":
-        return solve_hybrid(request, settings)
-    if request.solver == "dwave_local":
-        return _solve_dwave_local_wrapper(request)
-    if request.solver == "qiskit_local":
-        return _solve_qiskit_local_wrapper(request)
-    return solve_classical(request, solver_name="classical")
-
-
-def _solve_dwave_local_wrapper(request: SolverRequest) -> PortfolioSolution:
-    import time
-    import numpy as np
-    from qubo_backend.optimization.portfolio import PortfolioSolution
-    
-    started = time.perf_counter()
-    res = solve_with_dwave_local(
-        mu=np.array(request.mu),
-        sigma=np.array(request.sigma),
-        cardinality=request.cardinality,
-        risk_tolerance=request.risk_tolerance,
-        binary_bits=request.binary_bits
-    )
-    
-    # Map back to PortfolioSolution
-    # Note: This is a simplified mapping for the demonstration
-    from qubo_backend.optimization.contracts import SolverMetadata
-    return PortfolioSolution(
-        weights={ticker: w for ticker, w in zip(request.tickers, res["weights"])},
-        metadata=SolverMetadata(
-            solver="dwave_local",
-            energy=res["energy"],
-            solve_time_ms=round((time.perf_counter() - started) * 1000, 3),
-            provider="local"
-        )
-    )
-
-def _solve_qiskit_local_wrapper(request: SolverRequest) -> PortfolioSolution:
-    import time
-    import numpy as np
-    from qubo_backend.optimization.portfolio import PortfolioSolution
-    
-    started = time.perf_counter()
-    res = solve_with_qiskit_local(
-        mu=np.array(request.mu),
-        sigma=np.array(request.sigma),
-        cardinality=request.cardinality,
-        risk_tolerance=request.risk_tolerance,
-        binary_bits=min(request.binary_bits, 3) # Cap qubits for local sim
-    )
-    
-    from qubo_backend.optimization.contracts import SolverMetadata
-    return PortfolioSolution(
-        weights={ticker: w for ticker, w in zip(request.tickers, res["weights"])},
-        metadata=SolverMetadata(
-            solver="qiskit_local",
-            energy=res["energy"],
-            solve_time_ms=round((time.perf_counter() - started) * 1000, 3),
-            provider="local"
-        )
-    )
-
-
-def solve_hybrid(request: SolverRequest, settings: Settings) -> PortfolioSolution:
-    dwave_request = request.model_copy(update={"solver": "dwave_hybrid"})
-    dwave_solution = solve_dwave(dwave_request, settings, direct_qpu=False)
-    if not _is_fallback(dwave_solution):
-        return dwave_solution
-
-    qiskit_request = request.model_copy(update={"solver": "qiskit_qaoa"})
-    qiskit_solution = solve_qiskit_qaoa(qiskit_request, settings)
-    if not _is_fallback(qiskit_solution):
-        qiskit_solution.metadata.fallback_reason = (
-            f"D-Wave unavailable; used Qiskit. D-Wave reason: {dwave_solution.metadata.fallback_reason}"
-        )  # type: ignore[misc]
-        return qiskit_solution
-
-    classical = solve_classical(request, solver_name="hybrid_classical_fallback")
-    classical.metadata.fallback_reason = (  # type: ignore[misc]
-        "D-Wave and Qiskit were unavailable or ineligible; "
-        f"D-Wave: {dwave_solution.metadata.fallback_reason}; "
-        f"Qiskit: {qiskit_solution.metadata.fallback_reason}"
-    )
-    classical.metadata.provider = "local"  # type: ignore[misc]
-    return classical
-
-
-def _is_fallback(solution: PortfolioSolution) -> bool:
-    return "fallback" in solution.metadata.solver or bool(solution.metadata.fallback_reason)
+    return route_and_solve(request, settings)
 
 
 def _solve_with_neal(request: SolverRequest) -> PortfolioSolution:

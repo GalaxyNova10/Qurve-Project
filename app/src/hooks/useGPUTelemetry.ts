@@ -1,3 +1,5 @@
+/// <reference types="vite/client" />
+
 /**
  * WebSocket hook for real-time GPU telemetry.
  * Connects to ws://localhost:8000/ws/gpu-telemetry
@@ -19,7 +21,8 @@ const getWsUrl = () => {
   const configured = import.meta.env.VITE_WS_BASE_URL;
   if (configured) return configured;
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/ws/gpu-telemetry`;
+  // Backend runs on port 8000, frontend on different port
+  return `${protocol}//localhost:8000/ws/gpu-telemetry`;
 };
 const MAX_HISTORY = 60; // Keep 60 seconds of history
 const RECONNECT_DELAY = 3000; // Reconnect after 3s

@@ -145,7 +145,7 @@ export default function Analytics() {
             onClick={() => setTimeRange(range)}
             className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
               timeRange === range
-                ? 'bg-gradient-to-r from-[#FF6200] to-[#FF8533] text-white'
+                ? 'className="bg-gradient-to-r from-[#7C3AED] to-[#8B5CF6] text-white'
                 : 'bg-[#111827] border border-[#1E293B] text-[#94A3B8] hover:text-white'
             }`}
           >
@@ -163,7 +163,7 @@ export default function Analytics() {
         <Card className="bg-[#111827]/50 border-[#1E293B]">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
-              <AlertTriangle className="w-5 h-5 text-[#F59E0B]" />
+              <AlertTriangle className="w-5 h-5 text-[#7C3AED]" />
               Risk Metrics
             </CardTitle>
           </CardHeader>
@@ -308,7 +308,7 @@ export default function Analytics() {
           <Card className="bg-[#111827]/50 border-[#1E293B]">
             <CardHeader>
               <CardTitle className="text-white flex items-center gap-2">
-                <Target className="w-5 h-5 text-[#0048B4]" />
+                <Target className="w-5 h-5 text-[#7C3AED]" />
                 Factor Exposure
               </CardTitle>
             </CardHeader>

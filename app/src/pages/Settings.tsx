@@ -94,7 +94,7 @@ export default function Settings() {
                 <select 
                   value={general.language}
                   onChange={(e) => setGeneral({ ...general, language: e.target.value })}
-                  className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#FF6200]/50"
+                  className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#7C3AED]/50"
                 >
                   <option value="en">English</option>
                   <option value="hi">Hindi</option>
@@ -106,7 +106,7 @@ export default function Settings() {
                 <select 
                   value={general.timezone}
                   onChange={(e) => setGeneral({ ...general, timezone: e.target.value })}
-                  className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#FF6200]/50"
+                  className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#7C3AED]/50"
                 >
                   <option value="Asia/Kolkata">IST (UTC+5:30)</option>
                   <option value="UTC">UTC</option>
@@ -118,7 +118,7 @@ export default function Settings() {
                 <select 
                   value={general.currency}
                   onChange={(e) => setGeneral({ ...general, currency: e.target.value })}
-                  className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#FF6200]/50"
+                  className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#7C3AED]/50"
                 >
                   <option value="INR">Indian Rupee (₹)</option>
                   <option value="USD">US Dollar ($)</option>
@@ -130,7 +130,7 @@ export default function Settings() {
                 <select 
                   value={general.dateFormat}
                   onChange={(e) => setGeneral({ ...general, dateFormat: e.target.value })}
-                  className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#FF6200]/50"
+                  className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#7C3AED]/50"
                 >
                   <option value="DD/MM/YYYY">DD/MM/YYYY</option>
                   <option value="MM/DD/YYYY">MM/DD/YYYY</option>
@@ -154,8 +154,8 @@ export default function Settings() {
             ].map((item) => (
               <div key={item.key} className="flex items-center justify-between p-4 rounded-xl bg-[#0d1117] border border-[#1E293B]">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-[#FF6200]/10 flex items-center justify-center">
-                    <item.icon className="w-5 h-5 text-[#FF6200]" />
+                  <div className="w-10 h-10 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center">
+                    <item.icon className="w-5 h-5 text-[#7C3AED]" />
                   </div>
                   <div>
                     <p className="text-white font-medium">{item.label}</p>
@@ -207,7 +207,7 @@ export default function Settings() {
             <div className="p-4 rounded-xl bg-[#0d1117] border border-[#1E293B]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                  <div className="w-10 h-10 rounded-lg bg-[#0048B4]/10 flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-lg bg-[#7C3AED]/10 flex items-center justify-center">
                     <Smartphone className="w-5 h-5 text-[#0048B4]" />
                   </div>
                   <div>
@@ -229,7 +229,7 @@ export default function Settings() {
               <select 
                 value={security.sessionTimeout}
                 onChange={(e) => setSecurity({ ...security, sessionTimeout: e.target.value })}
-                className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#FF6200]/50"
+                className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#7C3AED]/50"
               >
                 <option value="15">15 minutes</option>
                 <option value="30">30 minutes</option>

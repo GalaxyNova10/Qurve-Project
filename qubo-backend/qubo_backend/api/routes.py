@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from math import cos, sin
 from typing import Any
@@ -8,6 +9,9 @@ from typing import Any
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 import auth
+
+logger = logging.getLogger(__name__)
+from .system import router as system_router
 from schemas import (
     ConfigDefaultsResponse,
     GPUMetrics,
@@ -17,6 +21,7 @@ from schemas import (
     PortfolioHoldingsList,
     PortfolioResponse,
     QuboParams,
+    BenchmarkParams,
 )
 from qubo_backend.config import Settings
 from qubo_backend.data.alpha import AlphaData, load_alpha_data
@@ -24,12 +29,23 @@ from qubo_backend.jobs.store import JobStore
 from qubo_backend.optimization.contracts import SolverRequest
 from qubo_backend.optimization.portfolio import result_to_portfolio_response
 from qubo_backend.solvers.registry import available_solvers, solve
+from qubo_backend.solvers.benchmark import run_benchmark
 from qubo_backend.storage.artifacts import ArtifactStore
 
 
 def create_api_router(settings: Settings, artifacts: ArtifactStore, job_store: JobStore) -> APIRouter:
+    # Ensure artifacts and job_store are Path objects, not strings
+    from pathlib import Path
+    if isinstance(artifacts, str):
+        artifacts = ArtifactStore(Path(artifacts))
+    if isinstance(job_store, str):
+        job_store = JobStore(Path(job_store))
+        
     router = APIRouter()
     telemetry = TelemetryProvider()
+    
+    # Include system health endpoints
+    router.include_router(system_router, prefix="/system", tags=["system"])
 
     @router.get("/health", response_model=HealthResponse)
     async def health_check():
@@ -82,6 +98,13 @@ def create_api_router(settings: Settings, artifacts: ArtifactStore, job_store: J
     @router.get("/bilstm/predictions")
     async def bilstm_predictions(ticker: str = "NIFTY 50", days: int = 60):
         return {"ticker": ticker, "data": deterministic_prediction_series(ticker, days)}
+
+    @router.get("/bilstm/predictions/indicators")
+    async def bilstm_predictions_with_indicators(ticker: str = "NIFTY 50", days: int = 252):
+        candles = deterministic_prediction_series(ticker, days)
+        indicators = compute_indicators(candles)
+        return {"ticker": ticker, "data": candles, "indicators": indicators}
+
 
     @router.get("/solvers")
     async def solvers():
@@ -203,6 +226,119 @@ def create_api_router(settings: Settings, artifacts: ArtifactStore, job_store: J
     async def legacy_optimization_status(task_id: str):
         return await optimization_status(task_id)
 
+    # ── Braket-specific endpoint ────────────────────────────────────
+    @router.post("/optimize/braket", response_model=OptimizationTaskResponse)
+    async def create_braket_optimization(
+        params: QuboParams,
+        background_tasks: BackgroundTasks,
+        current_user: auth.User = Depends(auth.get_current_active_user),
+    ):
+        _ = current_user
+        return _queue_optimization(settings, artifacts, job_store, params, background_tasks, solver_override="braket")
+
+    # ── Benchmark endpoint ──────────────────────────────────────────
+    @router.post("/benchmark")
+    @router.post("/benchmarks")
+    async def benchmark_solvers(
+        params: BenchmarkParams,
+        background_tasks: BackgroundTasks,
+        current_user: auth.User = Depends(auth.get_current_active_user),
+    ):
+        """Run the same optimization across selected solvers and return comparison."""
+        import traceback
+        import uuid
+        
+        try:
+            _ = current_user
+            request_id = str(uuid.uuid4())
+            
+            selected_solvers = params.selected_solvers
+            execution_mode = params.execution_mode or "LOCAL_ONLY"
+            
+            logger.info("[BENCHMARK_REQUEST_PAYLOAD] mode=%s execution_mode=%s selected_solvers=%s assets=%s bits=%s request_id=%s", 
+                        params.benchmark_mode, execution_mode, selected_solvers, params.num_assets, params.binary_bits, request_id)
+            logger.info("[BENCHMARK_START] Starting benchmark with params: %s", params.model_dump())
+            
+            if selected_solvers:
+                logger.info("[SOLVER_SELECTION_AUDIT] selected_solvers=%s execution_mode=%s request_id=%s",
+                            selected_solvers, execution_mode, request_id)
+            
+            # [BENCHMARK_MODE_PROPAGATION]
+            logger.info("[BENCHMARK_MODE_PROPAGATION] api_layer mode=%s", params.benchmark_mode)
+            
+            # Check if alpha data exists before trying to load
+            alpha_data_path = settings.output_dir / "alpha_data.npz"
+            if not alpha_data_path.exists():
+                logger.error("[BENCHMARK_ERROR] Alpha data file missing: %s", alpha_data_path)
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "Alpha data not found",
+                        "message": f"Required alpha data file missing: {alpha_data_path}",
+                        "type": "FileNotFoundError"
+                    }
+                )
+            
+            alpha = load_alpha_data(settings.output_dir)
+            logger.debug("[BENCHMARK_DEBUG] Alpha data loaded successfully")
+            
+            request = params_to_solver_request({**params.model_dump(), "solver_mode": "classical"}, alpha)
+            logger.debug("[BENCHMARK_DEBUG] Solver request created: %s", request.model_dump())
+            
+            result = await run_benchmark(
+                request,
+                settings,
+                solvers=selected_solvers,
+                execution_mode=execution_mode,
+                timeout_ms=30000,
+                request_id=request_id,
+            )
+            logger.info("[BENCHMARK_SUCCESS] Benchmark completed successfully request_id=%s", request_id)
+            return result
+            
+        except FileNotFoundError as e:
+            logger.error("[BENCHMARK_ERROR] Alpha data missing: %s", str(e))
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Alpha data not found",
+                    "message": str(e),
+                    "type": "FileNotFoundError"
+                }
+            )
+        except ValueError as e:
+            logger.error("[BENCHMARK_ERROR] Data validation failed: %s", str(e))
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "Invalid data format",
+                    "message": str(e),
+                    "type": "ValueError"
+                }
+            )
+        except Exception as e:
+            logger.error("[BENCHMARK_ERROR] Benchmark endpoint failed: %s", str(e))
+            logger.error("[BENCHMARK_TRACEBACK] %s", traceback.format_exc())
+            
+            # Return proper error response instead of 500
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "error": "Benchmark execution failed",
+                    "message": str(e),
+                    "type": type(e).__name__,
+                    "traceback": traceback.format_exc()
+                }
+            )
+
+    return router
+
+
+def create_websocket_router(settings: Settings) -> APIRouter:
+    """Separate router for WebSocket endpoints (no /api/v1 prefix)."""
+    router = APIRouter()
+    telemetry = TelemetryProvider()
+
     @router.websocket("/ws/gpu-telemetry")
     async def gpu_telemetry_ws(ws: WebSocket):
         await ws.accept()
@@ -238,35 +374,84 @@ def _queue_optimization(
 ) -> OptimizationTaskResponse:
     payload = params.model_dump()
     if solver_override is not None:
-        payload["solver_mode"] = solver_override
+        payload["requested_solver"] = solver_override
     job = job_store.create(payload)
     background_tasks.add_task(run_optimization_job, settings, artifacts, job_store, job["task_id"])
     return optimization_response(job)
 
 
 def params_to_solver_request(params: dict[str, Any], alpha: AlphaData) -> SolverRequest:
-    solver_mode = str(params.get("solver_mode") or "sb")
+    requested_solver = str(params.get("requested_solver") or "auto")
     solver_aliases = {
         "ballistic": "sb",
         "adiabatic": "sb",
         "qiskit": "qiskit_qaoa",
+        "gpu": "sb",
+        "dwave": "dwave_hybrid",
+        "auto": "auto",
+        "classical": "classical",
+        "hybrid": "hybrid",
+        "braket": "braket",
+        "braket_local": "braket_local",
+        "dwave_local": "dwave_local",
+        "qiskit_local": "qiskit_local",
     }
-    solver_mode = solver_aliases.get(solver_mode, solver_mode)
-    allowed = {"classical", "sb", "neal", "dwave_hybrid", "dwave_qpu", "qiskit_qaoa", "hybrid"}
-    solver = solver_mode if solver_mode in allowed else "sb"
-    return SolverRequest(
-        mu=alpha.mu.tolist(),
-        sigma=alpha.sigma.tolist(),
-        tickers=alpha.tickers,
-        sectors=alpha.sectors,
-        cardinality=int(params.get("cardinality", 15)),
-        max_sector_exposure=float(params.get("max_sector_exposure", 0.25)),
-        risk_tolerance=float(params.get("risk_tolerance", 0.5)),
-        binary_bits=int(params.get("binary_bits", 7)),
-        solver=solver,  # type: ignore[arg-type]
-        trajectories=int(params.get("trajectories", 256) or 256),
-        time_limit_seconds=params.get("time_limit_seconds"),
-    )
+    requested_solver = solver_aliases.get(requested_solver, requested_solver)
+    allowed = {
+        "auto", "gpu", "classical", "sb", "neal",
+        "dwave", "dwave_hybrid", "dwave_qpu", "dwave_local",
+        "qiskit", "qiskit_qaoa", "qiskit_local",
+        "braket", "braket_local",
+        "hybrid",
+    }
+    solver = requested_solver if requested_solver in allowed else "auto"
+    
+    # Handle asset limiting if num_assets is specified
+    num_assets = params.get("num_assets")
+    if num_assets is not None and num_assets < len(alpha.tickers):
+        import numpy as np
+        
+        # Take first num_assets assets (simple approach)
+        limited_indices = list(range(min(num_assets, len(alpha.tickers))))
+        
+        mu_limited = np.array(alpha.mu)[limited_indices].tolist()
+        sigma_limited = np.array(alpha.sigma)[limited_indices][:, limited_indices].tolist()
+        tickers_limited = [alpha.tickers[i] for i in limited_indices]
+        sectors_limited = [alpha.sectors[i] for i in limited_indices]
+        
+        logger.info("[ASSET_LIMITING] Limited dataset from %d to %d assets", 
+                   len(alpha.tickers), len(tickers_limited))
+        
+        return SolverRequest(
+            mu=mu_limited,
+            sigma=sigma_limited,
+            tickers=tickers_limited,
+            sectors=sectors_limited,
+            cardinality=min(int(params.get("cardinality", 15)), len(tickers_limited)),
+            max_sector_exposure=float(params.get("max_sector_exposure", 0.25)),
+            risk_tolerance=float(params.get("risk_tolerance", 0.5)),
+            binary_bits=int(params.get("binary_bits", 7)),
+            solver=solver,  # type: ignore[arg-type]
+            trajectories=int(params.get("trajectories", 256) or 256),
+            time_limit_seconds=params.get("time_limit_seconds"),
+            benchmark_mode=params.get("benchmark_mode"),  # type: ignore[arg-type]
+        )
+    else:
+        # Use full dataset
+        return SolverRequest(
+            mu=alpha.mu.tolist(),
+            sigma=alpha.sigma.tolist(),
+            tickers=alpha.tickers,
+            sectors=alpha.sectors,
+            cardinality=int(params.get("cardinality", 15)),
+            max_sector_exposure=float(params.get("max_sector_exposure", 0.25)),
+            risk_tolerance=float(params.get("risk_tolerance", 0.5)),
+            binary_bits=int(params.get("binary_bits", 7)),
+            solver=solver,  # type: ignore[arg-type]
+            trajectories=int(params.get("trajectories", 256) or 256),
+            time_limit_seconds=params.get("time_limit_seconds"),
+            benchmark_mode=params.get("benchmark_mode"),  # type: ignore[arg-type]
+        )
 
 
 def run_optimization_job(settings: Settings, artifacts: ArtifactStore, job_store: JobStore, task_id: str) -> None:
@@ -298,41 +483,74 @@ def run_optimization_job(settings: Settings, artifacts: ArtifactStore, job_store
 
 
 def deterministic_prediction_series(ticker: str, days: int) -> list[dict[str, Any]]:
-    base = 22500.0 if ticker.upper() == "NIFTY 50" else 2456.8
+    """Generate realistic NIFTY 50-style OHLCV data with multi-harmonic price movement."""
+    base = 24500.0 if ticker.upper() == "NIFTY 50" else 2456.8
     seed = sum(ord(char) for char in ticker)
     now = datetime.now()
     rows: list[dict[str, Any]] = []
     price = base
-    total_days = max(10, min(days, 365))
+    total_days = max(10, min(days, 1260))
+
+    # Pre-compute a long-term trend direction
+    trend = 0.0003  # slight bullish bias (~7.5% annual)
+
     for offset in range(total_days, 0, -1):
         phase = (seed + offset) / 9.0
-        change = 0.0002 + sin(phase) * 0.006 + cos(phase / 2.5) * 0.003
-        open_price = price
-        close_price = max(1.0, price * (1 + change))
-        spread = abs(sin(phase)) * 0.008
+        # Multi-harmonic: trend + short cycle + medium cycle + long cycle + noise
+        cycle_short = sin(phase * 1.1) * 0.005
+        cycle_med = sin(phase * 0.35) * 0.008
+        cycle_long = cos(phase * 0.07) * 0.012
+        noise = sin(phase * 7.3) * 0.002 + cos(phase * 13.1) * 0.001
+        mean_rev = -0.01 * ((price - base) / base)  # mean-reversion pull
+        change = trend + cycle_short + cycle_med + cycle_long + noise + mean_rev
+
+        # Gap open simulation (occasional 0.3-0.8% gaps)
+        gap = 0.0
+        if abs(sin(phase * 3.7)) > 0.92:
+            gap = sin(phase * 5.1) * 0.006
+        open_price = price * (1 + gap)
+
+        close_price = max(base * 0.6, open_price * (1 + change))
+
+        # Realistic wicks: upper wick + lower wick
+        body = abs(close_price - open_price)
+        upper_wick = body * (0.3 + abs(sin(phase * 2.3)) * 0.8)
+        lower_wick = body * (0.3 + abs(cos(phase * 1.7)) * 0.8)
+        high_price = max(open_price, close_price) + upper_wick
+        low_price = min(open_price, close_price) - lower_wick
+
+        # Volume: higher on trend days, lower on doji days
+        body_pct = abs(change) * 100
+        vol_base = 8_000_000 + int(abs(sin(phase * 0.5)) * 12_000_000)
+        vol_trend_mult = 1.0 + min(body_pct, 2.0) * 0.5
+        volume = int(vol_base * vol_trend_mult)
+
         rows.append(
             {
                 "time": (now - timedelta(days=offset)).strftime("%Y-%m-%d"),
                 "open": round(open_price, 2),
-                "high": round(max(open_price, close_price) * (1 + spread), 2),
-                "low": round(min(open_price, close_price) * (1 - spread), 2),
+                "high": round(high_price, 2),
+                "low": round(low_price, 2),
                 "close": round(close_price, 2),
-                "volume": int(1_000_000 + (abs(sin(phase)) * 4_000_000)),
+                "volume": volume,
                 "predicted": False,
             }
         )
         price = close_price
+
+    # Future predicted candles (10 days)
     for offset in range(1, 11):
         phase = (seed + total_days + offset) / 11.0
-        change = 0.0004 + sin(phase) * 0.003
+        change = 0.0004 + sin(phase) * 0.004 + cos(phase * 0.3) * 0.002
         open_price = price
-        close_price = max(1.0, price * (1 + change))
+        close_price = max(base * 0.6, price * (1 + change))
+        body = abs(close_price - open_price)
         rows.append(
             {
                 "time": (now + timedelta(days=offset)).strftime("%Y-%m-%d"),
                 "open": round(open_price, 2),
-                "high": round(max(open_price, close_price) * 1.004, 2),
-                "low": round(min(open_price, close_price) * 0.996, 2),
+                "high": round(max(open_price, close_price) + body * 0.3, 2),
+                "low": round(min(open_price, close_price) - body * 0.3, 2),
                 "close": round(close_price, 2),
                 "volume": 0,
                 "predicted": True,
@@ -340,6 +558,161 @@ def deterministic_prediction_series(ticker: str, days: int) -> list[dict[str, An
         )
         price = close_price
     return rows
+
+
+def compute_indicators(candles: list[dict[str, Any]]) -> dict[str, Any]:
+    """Compute technical indicators from OHLCV candle data."""
+    closes = [c["close"] for c in candles]
+    highs = [c["high"] for c in candles]
+    lows = [c["low"] for c in candles]
+    volumes = [c["volume"] for c in candles]
+    n = len(closes)
+
+    def _sma(data: list[float], period: int) -> list[float | None]:
+        result: list[float | None] = [None] * n
+        for i in range(period - 1, n):
+            result[i] = sum(data[i - period + 1: i + 1]) / period
+        return result
+
+    def _ema(data: list[float], period: int) -> list[float | None]:
+        result: list[float | None] = [None] * n
+        if n < period:
+            return result
+        k = 2 / (period + 1)
+        result[period - 1] = sum(data[:period]) / period
+        for i in range(period, n):
+            result[i] = data[i] * k + (result[i - 1] or 0) * (1 - k)
+        return result
+
+    sma20 = _sma(closes, 20)
+    sma50 = _sma(closes, 50)
+    ema9 = _ema(closes, 9)
+    ema21 = _ema(closes, 21)
+
+    # RSI(14)
+    rsi: list[float | None] = [None] * n
+    period_rsi = 14
+    if n > period_rsi:
+        gains = [0.0] * n
+        losses = [0.0] * n
+        for i in range(1, n):
+            diff = closes[i] - closes[i - 1]
+            gains[i] = max(diff, 0)
+            losses[i] = max(-diff, 0)
+        avg_gain = sum(gains[1:period_rsi + 1]) / period_rsi
+        avg_loss = sum(losses[1:period_rsi + 1]) / period_rsi
+        if avg_loss > 0:
+            rsi[period_rsi] = 100 - (100 / (1 + avg_gain / avg_loss))
+        else:
+            rsi[period_rsi] = 100.0
+        for i in range(period_rsi + 1, n):
+            avg_gain = (avg_gain * (period_rsi - 1) + gains[i]) / period_rsi
+            avg_loss = (avg_loss * (period_rsi - 1) + losses[i]) / period_rsi
+            if avg_loss > 0:
+                rsi[i] = 100 - (100 / (1 + avg_gain / avg_loss))
+            else:
+                rsi[i] = 100.0
+
+    # MACD(12,26,9)
+    ema12 = _ema(closes, 12)
+    ema26 = _ema(closes, 26)
+    macd_line: list[float | None] = [None] * n
+    for i in range(n):
+        if ema12[i] is not None and ema26[i] is not None:
+            macd_line[i] = ema12[i] - ema26[i]
+    macd_vals = [v if v is not None else 0.0 for v in macd_line]
+    signal_line = _ema(macd_vals, 9)
+    macd_histogram: list[float | None] = [None] * n
+    for i in range(n):
+        if macd_line[i] is not None and signal_line[i] is not None:
+            macd_histogram[i] = macd_line[i] - signal_line[i]
+
+    # Bollinger Bands(20,2)
+    bb_upper: list[float | None] = [None] * n
+    bb_lower: list[float | None] = [None] * n
+    bb_mid = sma20
+    for i in range(19, n):
+        window = closes[i - 19: i + 1]
+        mean = sum(window) / 20
+        std = (sum((x - mean) ** 2 for x in window) / 20) ** 0.5
+        bb_upper[i] = mean + 2 * std
+        bb_lower[i] = mean - 2 * std
+
+    # VWAP (cumulative)
+    vwap: list[float | None] = [None] * n
+    cum_tp_vol = 0.0
+    cum_vol = 0.0
+    for i in range(n):
+        tp = (highs[i] + lows[i] + closes[i]) / 3
+        cum_tp_vol += tp * volumes[i]
+        cum_vol += volumes[i]
+        if cum_vol > 0:
+            vwap[i] = cum_tp_vol / cum_vol
+
+    # Supertrend(10,3)
+    supertrend: list[float | None] = [None] * n
+    supertrend_dir: list[int] = [1] * n  # 1=bullish, -1=bearish
+    atr_period = 10
+    mult = 3.0
+    if n > atr_period:
+        tr_list = [0.0] * n
+        for i in range(1, n):
+            tr_list[i] = max(highs[i] - lows[i], abs(highs[i] - closes[i - 1]), abs(lows[i] - closes[i - 1]))
+        atr = [0.0] * n
+        atr[atr_period] = sum(tr_list[1:atr_period + 1]) / atr_period
+        for i in range(atr_period + 1, n):
+            atr[i] = (atr[i - 1] * (atr_period - 1) + tr_list[i]) / atr_period
+
+        upper_band = [0.0] * n
+        lower_band = [0.0] * n
+        for i in range(atr_period, n):
+            hl2 = (highs[i] + lows[i]) / 2
+            upper_band[i] = hl2 + mult * atr[i]
+            lower_band[i] = hl2 - mult * atr[i]
+
+            if i > atr_period:
+                if lower_band[i] < lower_band[i - 1] and closes[i - 1] > lower_band[i - 1]:
+                    pass
+                elif closes[i - 1] > lower_band[i - 1]:
+                    lower_band[i] = max(lower_band[i], lower_band[i - 1])
+
+                if upper_band[i] > upper_band[i - 1] and closes[i - 1] < upper_band[i - 1]:
+                    pass
+                elif closes[i - 1] < upper_band[i - 1]:
+                    upper_band[i] = min(upper_band[i], upper_band[i - 1])
+
+            if i == atr_period:
+                supertrend_dir[i] = 1 if closes[i] > upper_band[i] else -1
+            else:
+                prev_dir = supertrend_dir[i - 1]
+                if prev_dir == 1 and closes[i] < lower_band[i]:
+                    supertrend_dir[i] = -1
+                elif prev_dir == -1 and closes[i] > upper_band[i]:
+                    supertrend_dir[i] = 1
+                else:
+                    supertrend_dir[i] = prev_dir
+
+            supertrend[i] = lower_band[i] if supertrend_dir[i] == 1 else upper_band[i]
+
+    def _round_list(lst: list) -> list:
+        return [round(v, 2) if v is not None else None for v in lst]
+
+    return {
+        "sma20": _round_list(sma20),
+        "sma50": _round_list(sma50),
+        "ema9": _round_list(ema9),
+        "ema21": _round_list(ema21),
+        "rsi": _round_list(rsi),
+        "macd_line": _round_list(macd_line),
+        "macd_signal": _round_list(signal_line),
+        "macd_histogram": _round_list(macd_histogram),
+        "bb_upper": _round_list(bb_upper),
+        "bb_mid": _round_list(bb_mid),
+        "bb_lower": _round_list(bb_lower),
+        "vwap": _round_list(vwap),
+        "supertrend": _round_list(supertrend),
+        "supertrend_direction": supertrend_dir,
+    }
 
 
 class TelemetryProvider:

@@ -91,8 +91,8 @@ const HoldingsTable = ({ portfolio }: HoldingsTableProps) => {
   const SortIcon = ({ column }: { column: SortKey }) => {
     if (sortKey !== column) return <ArrowUpDown className="w-4 h-4 text-[#64748B]" />;
     return sortOrder === 'asc' 
-      ? <TrendingUp className="w-4 h-4 text-[#FF6200]" />
-      : <TrendingDown className="w-4 h-4 text-[#FF6200]" />;
+      ? <TrendingUp className="w-4 h-4 text-primary" />
+      : <TrendingDown className="w-4 h-4 text-primary" />;
   };
   
   return (
@@ -101,11 +101,11 @@ const HoldingsTable = ({ portfolio }: HoldingsTableProps) => {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <CardTitle className="text-white text-lg flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-[#10B981]" />
+              <TrendingUp className="w-5 h-5 text-primary" />
               Portfolio Holdings
             </CardTitle>
             <p className="text-sm text-[#64748B]">
-              {holdings.length} assets selected by QUBO optimizer
+              {holdings.length} assets selected by Qurve optimizer
             </p>
           </div>
           
@@ -118,7 +118,7 @@ const HoldingsTable = ({ portfolio }: HoldingsTableProps) => {
                 placeholder="Search holdings..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-48 pl-10 bg-[#0a0f1c] border-[#1E293B] text-white text-sm"
+                className="w-48 pl-10 bg-[#0a0f1c] border-[#1E293B] text-white text-sm focus:border-primary/50"
               />
             </div>
             
@@ -126,7 +126,7 @@ const HoldingsTable = ({ portfolio }: HoldingsTableProps) => {
             <select
               value={selectedSector || ''}
               onChange={(e) => setSelectedSector(e.target.value || null)}
-              className="px-3 py-2 bg-[#0a0f1c] border border-[#1E293B] rounded-lg text-sm text-white"
+              className="px-3 py-2 bg-[#0a0f1c] border border-[#1E293B] rounded-lg text-sm text-white focus:outline-none focus:border-primary/50"
             >
               <option value="">All Sectors</option>
               {sectors.map(sector => (
@@ -135,7 +135,7 @@ const HoldingsTable = ({ portfolio }: HoldingsTableProps) => {
             </select>
             
             {/* Export */}
-            <Button variant="outline" size="sm" className="border-[#1E293B] text-[#94A3B8]">
+            <Button variant="outline" size="sm" className="border-[#1E293B] text-[#94A3B8] hover:text-white hover:bg-muted">
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
@@ -177,11 +177,11 @@ const HoldingsTable = ({ portfolio }: HoldingsTableProps) => {
               {holdings.map((holding) => (
                 <TableRow 
                   key={holding.ticker}
-                  className="border-[#1E293B]/50 hover:bg-[#FF6200]/5"
+                  className="border-[#1E293B]/50 hover:bg-primary/5"
                 >
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#FF6200]/20 to-[#0048B4]/20 flex items-center justify-center">
+                      <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center">
                         <span className="text-xs font-bold text-white">
                           {holding.ticker.charAt(0)}
                         </span>
@@ -195,7 +195,7 @@ const HoldingsTable = ({ portfolio }: HoldingsTableProps) => {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Badge className="badge-orange">
+                    <Badge className="bg-primary/10 text-primary border border-primary/20">
                       {holding.sector}
                     </Badge>
                   </TableCell>
@@ -226,7 +226,7 @@ const HoldingsTable = ({ portfolio }: HoldingsTableProps) => {
                     <div className="flex items-center justify-end gap-2">
                       <div className="w-16 h-2 bg-[#1E293B] rounded-full overflow-hidden">
                         <div 
-                          className="h-full bg-gradient-to-r from-[#FF6200] to-[#0048B4]"
+                          className="h-full bg-gradient-to-r from-primary to-secondary"
                           style={{ width: `${holding.weight * 500}%` }}
                         />
                       </div>

@@ -56,15 +56,15 @@ const SurfaceMesh = ({ metrics }: { metrics: SimplifiedMetrics | null }) => {
     meshRef.current.geometry.computeVertexNormals();
   });
 
-  // Custom shader material for the surface to get that green->yellow->red gradient based on height
+  // Custom shader material for the surface to map from deep navy -> cyan -> neon purple
   const material = useMemo(() => {
     return new THREE.ShaderMaterial({
       uniforms: {
         minHeight: { value: -4.0 },
         maxHeight: { value: 3.0 },
-        colorMin: { value: new THREE.Color('#22c55e') },   // Green
-        colorMid: { value: new THREE.Color('#eab308') },   // Yellow
-        colorMax: { value: new THREE.Color('#ef4444') },   // Red
+        colorMin: { value: new THREE.Color('#0F172A') },   // Deep Navy
+        colorMid: { value: new THREE.Color('#06B6D4') },   // Cyan
+        colorMax: { value: new THREE.Color('#7C3AED') },   // Neon Purple
       },
       vertexShader: `
         varying float vHeight;
@@ -136,7 +136,7 @@ const BifurcationPath = ({ progress }: { progress: number }) => {
     <group>
       <Line
         points={visiblePoints}
-        color="#0ea5e9" // Cyan/Blue
+        color="#7C3AED" // Changed from Cyan to Neon Purple for Qurve aesthetic
         lineWidth={3}
         transparent
         opacity={0.8}
@@ -145,7 +145,7 @@ const BifurcationPath = ({ progress }: { progress: number }) => {
       <mesh position={visiblePoints[visiblePoints.length - 1]}>
         <sphereGeometry args={[0.3, 16, 16]} />
         <meshBasicMaterial color="#ffffff" />
-        <pointLight color="#0ea5e9" intensity={2} distance={5} />
+        <pointLight color="#7C3AED" intensity={2} distance={5} />
       </mesh>
     </group>
   );
@@ -153,9 +153,9 @@ const BifurcationPath = ({ progress }: { progress: number }) => {
 
 export default function EnergyLandscape3D({ metrics, convergenceProgress = 0 }: EnergyLandscape3DProps) {
   return (
-    <div className="w-full h-full min-h-[400px] bg-[#0B1220] rounded-xl overflow-hidden relative">
+    <div className="w-full h-full min-h-[400px] bg-[#0B0E14] rounded-xl overflow-hidden relative">
       <Canvas camera={{ position: [15, 12, 15], fov: 45 }} className="w-full h-full">
-        <color attach="background" args={['#0B1220']} />
+        <color attach="background" args={['#0B0E14']} />
         <ambientLight intensity={0.5} />
         <SurfaceMesh metrics={metrics} />
         <BifurcationPath progress={convergenceProgress} />

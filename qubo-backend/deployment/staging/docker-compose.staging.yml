@@ -1,0 +1,135 @@
+# QURVE AI - Staging Environment Docker Compose
+# Staging configuration for testing and validation
+
+version: '3.8'
+
+services:
+  # Backend Service (Staging)
+  backend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.backend
+    container_name: qurve-backend-staging
+    ports:
+      - "8001:8000"
+    environment:
+      - ENVIRONMENT=staging
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - TELEMETRY_ENABLED=true
+      - QUEUE_MAX_SIZE=50
+      - WORKER_POOL_SIZE=2
+      - BENCHMARK_TIMEOUT_SECONDS=120
+      - REDIS_HOST=redis-staging
+      - METRICS_ENABLED=true
+    volumes:
+      - ../logs:/app/logs
+      - ../deployment/staging/config:/app/config
+    depends_on:
+      - redis-staging
+    networks:
+      - qurve-staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend Service (Staging)
+  frontend:
+    build:
+      context: ../..
+      dockerfile: Dockerfile.frontend
+    container_name: qurve-frontend-staging
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ENV=staging
+      - REACT_APP_API_URL=http://localhost:8001
+    depends_on:
+      - backend
+    networks:
+      - qurve-staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis for Staging
+  redis-staging:
+    image: redis:7-alpine
+    container_name: qurve-redis-staging
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_staging_data:/data
+      - ../deployment/staging/redis.conf:/usr/local/etc/redis/redis.conf
+    command: redis-server /usr/local/etc/redis/redis.conf
+    networks:
+      - qurve-staging-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Staging Monitoring
+  prometheus-staging:
+    image: prom/prometheus:latest
+    container_name: qurve-prometheus-staging
+    ports:
+      - "9091:9090"
+    volumes:
+      - ../deployment/staging/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_staging_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - qurve-staging-network
+    restart: unless-stopped
+
+  # Grafana for Staging
+  grafana-staging:
+    image: grafana/grafana:latest
+    container_name: qurve-grafana-staging
+    ports:
+      - "3002:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_staging_data:/var/lib/grafana
+      - ../deployment/staging/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ../deployment/staging/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus-staging
+    networks:
+      - qurve-staging-network
+    restart: unless-stopped
+
+volumes:
+  redis_staging_data:
+    driver: local
+  prometheus_staging_data:
+    driver: local
+  grafana_staging_data:
+    driver: local
+
+networks:
+  qurve-staging-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

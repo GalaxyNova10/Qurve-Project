@@ -49,6 +49,9 @@ class Settings:
     ibm_quantum_apikey_file: Path | None
     qiskit_max_assets: int
     qiskit_max_binary_bits: int
+    braket_max_assets: int
+    braket_max_binary_bits: int
+    braket_enabled: bool
 
 
 def get_settings() -> Settings:
@@ -85,6 +88,9 @@ def get_settings() -> Settings:
         ibm_quantum_apikey_file=ibm_key_file,
         qiskit_max_assets=int(os.getenv("QISKIT_MAX_ASSETS", "10")),
         qiskit_max_binary_bits=int(os.getenv("QISKIT_MAX_BINARY_BITS", "3")),
+        braket_max_assets=int(os.getenv("BRAKET_MAX_ASSETS", "8")),
+        braket_max_binary_bits=int(os.getenv("BRAKET_MAX_BINARY_BITS", "3")),
+        braket_enabled=os.getenv("BRAKET_ENABLED", "true").lower() in {"1", "true", "yes"},
     )
 
 

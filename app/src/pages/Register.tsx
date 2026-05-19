@@ -95,11 +95,11 @@ export default function Register() {
 
       {/* Social Sign Up */}
       <div className="grid grid-cols-2 gap-3 mb-6">
-        <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#111827] border border-[#1E293B] text-white hover:border-[#FF6200]/50 transition-colors">
+        <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#111827] border border-[#1E293B] text-white hover:border-[#7C3AED]/50 transition-colors">
           <Chrome className="w-5 h-5" />
           <span className="text-sm">Google</span>
         </button>
-        <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#111827] border border-[#1E293B] text-white hover:border-[#FF6200]/50 transition-colors">
+        <button className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-[#111827] border border-[#1E293B] text-white hover:border-[#7C3AED]/50 transition-colors">
           <Github className="w-5 h-5" />
           <span className="text-sm">GitHub</span>
         </button>
@@ -282,13 +282,13 @@ export default function Register() {
               aria-required="true"
               aria-invalid={errors.terms ? 'true' : 'false'}
               aria-describedby={errors.terms ? 'terms-error' : undefined}
-              className="mt-1 w-4 h-4 rounded border-[#1E293B] bg-[#111827] text-[#FF6200] focus:ring-[#FF6200]/50"
+              className="w-4 h-4 rounded border-[#1E293B] bg-[#111827] text-[#7C3AED] focus:ring-[#7C3AED]/50"
             />
             <span className="text-[#94A3B8] text-sm">
               I agree to the{' '}
-              <Link to="/terms" className="text-[#FF6200] hover:underline">Terms of Service</Link>
+              <Link to="/terms" className="text-[#7C3AED] hover:underline">Terms of Service</Link>
               {' '}and{' '}
-              <Link to="/privacy" className="text-[#FF6200] hover:underline">Privacy Policy</Link>
+              <Link to="/privacy" className="text-[#7C3AED] hover:underline">Privacy Policy</Link>
               <span className="text-[#EF4444]">*</span>
             </span>
           </label>
@@ -299,7 +299,7 @@ export default function Register() {
         <Button
           type="submit"
           disabled={isLoading}
-          className="w-full bg-gradient-to-r from-[#FF6200] to-[#FF8533] text-white hover:opacity-90 py-3 h-12"
+          className="w-full bg-gradient-to-r from-[#7C3AED] to-[#8B5CF6] text-white hover:opacity-90 py-3 h-12"
         >
           {isLoading ? (
             <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -315,7 +315,7 @@ export default function Register() {
       {/* Sign In Link */}
       <p className="mt-6 text-center text-[#94A3B8]">
         Already have an account?{' '}
-        <Link to="/login" className="text-[#FF6200] hover:underline font-medium">
+        <Link to="/login" className="text-[#7C3AED] hover:underline font-medium">
           Sign in
         </Link>
       </p>

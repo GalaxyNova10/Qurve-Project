@@ -12,9 +12,10 @@ import type {
   QuboParams,
   OptimizationTaskResponse,
   GPUMetrics,
+  BenchmarkResponse,
 } from '../types/portfolio';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || '/api/v1';
+const API_BASE = 'http://127.0.0.1:8000/api/v1';
 
 // ── Fetch Helpers ────────────────────────────────────────────
 
@@ -165,5 +166,43 @@ export function useBiLSTMPredictions(ticker: string, days: number = 60) {
     queryKey: ['bilstm', 'predictions', ticker, days],
     queryFn: () => apiFetch<{ticker: string, data: any[]}>(`/bilstm/predictions?ticker=${encodeURIComponent(ticker)}&days=${days}`),
     staleTime: 60_000,
+  });
+}
+
+/**
+ * Fetch BiLSTM predictions WITH technical indicators for a ticker.
+ */
+export function useBiLSTMWithIndicators(ticker: string, days: number = 252) {
+  return useQuery<{ticker: string, data: any[], indicators: Record<string, any>}>({
+    queryKey: ['bilstm', 'indicators', ticker, days],
+    queryFn: () => apiFetch<{ticker: string, data: any[], indicators: Record<string, any>}>(`/bilstm/predictions/indicators?ticker=${encodeURIComponent(ticker)}&days=${days}`),
+    staleTime: 60_000,
+  });
+}
+
+// ── Benchmarking ─────────────────────────────────────────────
+
+export interface BenchmarkParams {
+  num_assets?: number;
+  cardinality?: number;
+  risk_tolerance?: number;
+  max_sector_exposure?: number;
+  binary_bits?: number;
+  trajectories?: number;
+  benchmark_mode?: string;
+  requested_solver?: string;
+  selected_solvers?: string[];
+  execution_mode?: string;
+}
+
+export function useRunBenchmark() {
+  return useMutation<BenchmarkResponse, Error, BenchmarkParams>({
+    mutationFn: async (params: BenchmarkParams) => {
+      return apiFetch<BenchmarkResponse>('/benchmark', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+    },
   });
 }

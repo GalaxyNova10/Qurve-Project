@@ -1,0 +1,25 @@
+{
+  "operational_slos": {
+    "AWS_BRAKET_TN1": {
+      "target_p95_latency_ms": 15000,
+      "target_reliability": 0.99,
+      "target_timeout_rate": 0.01
+    },
+    "AWS_BRAKET_SV1": {
+      "target_p95_latency_ms": 45000,
+      "target_reliability": 0.98,
+      "target_timeout_rate": 0.02
+    },
+    "classical": {
+      "target_p95_latency_ms": 1000,
+      "target_reliability": 1.0,
+      "target_timeout_rate": 0.0
+    }
+  },
+  "scientific_slos": {
+    "target_feasible_rate": 0.9,
+    "target_approx_ratio_mean": 0.85,
+    "max_cardinality_deviation": 2,
+    "max_repair_frequency": 0.3
+  }
+}

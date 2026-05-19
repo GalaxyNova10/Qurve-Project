@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
-  TrendingUp, TrendingDown, Target, Activity, Zap, Calendar, 
+  TrendingUp, TrendingDown, Target, Activity, Zap, 
   ArrowUpRight, Download, BarChart3, PieChart, Layers, Cpu,
   Settings, Clock, Shield, LineChart as LineChartIcon,
   Play, Pause, RotateCcw, Thermometer, Gauge, MemoryStick, Sliders,
@@ -22,11 +22,12 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Area, AreaChart,
   BarChart, Bar, Legend
 } from 'recharts';
+import { useQueryClient } from '@tanstack/react-query';
 import { usePortfolio, useRunOptimization, useOptimizationStatus, useSolvers } from '@/hooks/usePortfolioData';
 import { useGPUTelemetry } from '@/hooks/useGPUTelemetry';
 import type { QuboParams } from '@/types/portfolio';
 
-type SolverMode = QuboParams['solver_mode'];
+type SolverMode = QuboParams['requested_solver'];
 
 // Generate equity curve data
 interface EquityDataPoint {
@@ -84,19 +85,19 @@ function KPICard({ title, value, subtitle, change, icon: Icon, delay, sparklineD
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay, duration: 0.5 }}
     >
-      <Card className="bg-[#111827] border-[#1E293B] hover:border-[#FF6200]/50 transition-all duration-300 h-full">
+      <Card className="bg-card border-border hover:border-primary/50 transition-all duration-300 h-full">
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-3">
             <div className="flex-1">
               <div className="flex items-center gap-1 mb-1">
-                <p className="text-[#64748B] text-xs font-medium uppercase tracking-wider">{title}</p>
+                <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">{title}</p>
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Info className="w-3 h-3 text-[#64748B] cursor-help" />
+                      <Info className="w-3 h-3 text-muted-foreground cursor-help" />
                     </TooltipTrigger>
-                    <TooltipContent className="bg-[#1e293b] border-[#334155] text-white text-[10px] max-w-[200px]">
-                      {title === 'Expected Return' && "Forecasted annual return based on historical mean returns and QUBO optimized weights."}
+                    <TooltipContent className="bg-muted border-border text-foreground text-[10px] max-w-[200px]">
+                      {title === 'Expected Return' && "Forecasted annual return based on historical mean returns and Qurve optimized weights."}
                       {title === 'Sharpe Ratio' && "Measures risk-adjusted return. Above 1.0 is considered good for a portfolio."}
                       {title === 'Sortino Ratio' && "Similar to Sharpe, but only penalizes downside volatility. Focuses on 'bad' risk."}
                       {title === 'Volatility' && "Annualized standard deviation (σ) of returns. Represents price fluctuations."}
@@ -104,10 +105,10 @@ function KPICard({ title, value, subtitle, change, icon: Icon, delay, sparklineD
                   </Tooltip>
                 </TooltipProvider>
               </div>
-              <h3 className="text-2xl font-bold text-white font-mono">{value}</h3>
+              <h3 className="text-2xl font-bold text-foreground font-mono">{value}</h3>
             </div>
-            <div className="w-10 h-10 rounded-lg bg-[#1E293B] flex items-center justify-center">
-              <Icon className="w-5 h-5 text-[#FF6200]" />
+            <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center">
+              <Icon className="w-5 h-5 text-primary" />
             </div>
           </div>
           
@@ -129,7 +130,7 @@ function KPICard({ title, value, subtitle, change, icon: Icon, delay, sparklineD
                     }).join(' ');
                   })()}
                   fill="none"
-                  stroke={isPositive ? '#22c55e' : '#f2362c'}
+                  stroke={isPositive ? '#10B981' : '#EF4444'}
                   strokeWidth="2"
                 />
               </svg>
@@ -137,11 +138,11 @@ function KPICard({ title, value, subtitle, change, icon: Icon, delay, sparklineD
           )}
           
           <div className="flex items-center justify-between">
-            <span className={`flex items-center gap-1 text-xs font-bold font-mono ${isPositive ? 'text-[#22c55e]' : 'text-[#f2362c]'}`}>
+            <span className={`flex items-center gap-1 text-xs font-bold font-mono ${isPositive ? 'text-[#10B981]' : 'text-[#EF4444]'}`}>
               {isPositive ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
               {isPositive ? '+' : ''}{change.toFixed(2)}%
             </span>
-            <span className="text-xs text-[#64748B]">{subtitle}</span>
+            <span className="text-xs text-muted-foreground">{subtitle}</span>
           </div>
         </CardContent>
       </Card>
@@ -151,8 +152,8 @@ function KPICard({ title, value, subtitle, change, icon: Icon, delay, sparklineD
 
 // Sector Donut Chart
 function SectorChart({ sectors }: { sectors: Record<string, number> }) {
-  const colors = ['#FF6200', '#0048B4', '#22c55e', '#f2362c', '#a855f7', '#f59e0b', '#06b6d4'];
-  const entries = Object.entries(sectors).sort((a, b) => b[1] - a[1]);
+  const colors = ['#7C3AED', '#3B82F6', '#06B6D4', '#0D9488', '#10B981', '#6D28D9', '#2563EB'];
+  const entries = Object.entries(sectors || {}).sort((a, b) => b[1] - a[1]);
   const total = entries.reduce((sum, [, v]) => sum + v, 0);
   
   let currentAngle = 0;
@@ -186,8 +187,8 @@ function SectorChart({ sectors }: { sectors: Record<string, number> }) {
       </svg>
       <div className="absolute inset-0 flex items-center justify-center">
         <div className="text-center">
-          <p className="text-lg font-bold text-white font-mono">{entries.length}</p>
-          <p className="text-[10px] text-[#64748B]">Sectors</p>
+          <p className="text-lg font-bold text-foreground font-mono">{entries.length}</p>
+          <p className="text-[10px] text-muted-foreground">Sectors</p>
         </div>
       </div>
     </div>
@@ -197,21 +198,21 @@ function SectorChart({ sectors }: { sectors: Record<string, number> }) {
 // Drawdown Chart
 function DrawdownChart() {
   return (
-    <div className="h-24">
+    <div className="h-full w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={EQUITY_DATA}>
+        <AreaChart data={EQUITY_DATA} margin={{ top: 20, right: 20, bottom: 40, left: 20 }}>
           <defs>
             <linearGradient id="drawdownGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#f2362c" stopOpacity={0.3}/>
-              <stop offset="95%" stopColor="#f2362c" stopOpacity={0}/>
+              <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3}/>
+              <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
             </linearGradient>
           </defs>
           <Area 
             type="monotone" 
             dataKey="drawdown" 
-            stroke="#f2362c" 
+            stroke="#EF4444" 
             fill="url(#drawdownGradient)" 
-            strokeWidth={1.5}
+            strokeWidth={2}
           />
         </AreaChart>
       </ResponsiveContainer>
@@ -229,24 +230,33 @@ function EquityCurveChart() {
           <XAxis dataKey="month" hide />
           <YAxis hide domain={['dataMin', 'dataMax']} />
           <RechartsTooltip 
-            contentStyle={{ 
-              backgroundColor: '#111827', 
-              border: '1px solid #1E293B',
-              borderRadius: '6px'
+            content={({ active, payload, label }) => {
+              if (active && payload && payload.length) {
+                return (
+                  <div className="bg-card border border-border p-2 rounded shadow-sm text-xs text-foreground">
+                    <p className="text-muted-foreground">{label}</p>
+                    {payload.map((item, i) => (
+                      <p key={i} style={{ color: item.color }}>
+                        {item.name}: {item.value}
+                      </p>
+                    ))}
+                  </div>
+                );
+              }
+              return null;
             }}
-            labelStyle={{ color: '#94A3B8' }}
           />
           <Line 
             type="monotone" 
             dataKey="equity" 
-            stroke="#FF6200" 
+            stroke="#7C3AED" 
             strokeWidth={2}
             dot={false}
           />
           <Line 
             type="monotone" 
             dataKey="benchmark" 
-            stroke="#0048B4" 
+            stroke="#3B82F6" 
             strokeWidth={2}
             dot={false}
             strokeDasharray="5 5"
@@ -283,13 +293,13 @@ function BacktestingRiskTab() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <Card className="bg-[#111827] border-[#1E293B]">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-[#FF6200]" />
+            <CardTitle className="text-foreground flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-primary" />
               Backtesting Results
             </CardTitle>
-            <p className="text-sm text-[#64748B]">Historical performance vs NIFTY 50 benchmark</p>
+            <p className="text-sm text-muted-foreground">Historical performance vs NIFTY 50 benchmark</p>
           </CardHeader>
           <CardContent>
             <div className="h-64 mb-6">
@@ -299,13 +309,26 @@ function BacktestingRiskTab() {
                   <XAxis dataKey="period" stroke="#64748B" />
                   <YAxis stroke="#64748B" />
                   <RechartsTooltip 
-                    contentStyle={{ backgroundColor: '#111827', border: '1px solid #1E293B' }}
-                    labelStyle={{ color: '#94A3B8' }}
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-card border border-border p-2 rounded shadow-sm text-xs text-foreground">
+                            <p className="text-muted-foreground">{label}</p>
+                            {payload.map((item, i) => (
+                              <p key={i} style={{ color: item.color }}>
+                                {item.name}: {item.value}
+                              </p>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
                   />
                   <Legend />
-                  <Bar dataKey="portfolio" name="QUBO Portfolio" fill="#FF6200" />
-                  <Bar dataKey="benchmark" name="NIFTY 50" fill="#0048B4" />
-                  <Bar dataKey="alpha" name="Alpha" fill="#22c55e" />
+                  <Bar dataKey="portfolio" name="Qurve Portfolio" fill="#7C3AED" />
+                  <Bar dataKey="benchmark" name="NIFTY 50" fill="#3B82F6" />
+                  <Bar dataKey="alpha" name="Alpha" fill="#10B981" />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -325,7 +348,7 @@ function BacktestingRiskTab() {
                       <td className="py-3 text-white">{row.period}</td>
                       <td className="py-3 text-right text-[#22c55e]">+{row.portfolio}%</td>
                       <td className="py-3 text-right text-[#94A3B8]">+{row.benchmark}%</td>
-                      <td className="py-3 text-right text-[#FF6200] font-medium">+{row.alpha}%</td>
+                      <td className="py-3 text-right text-primary font-medium">+{row.alpha}%</td>
                     </tr>
                   ))}
                 </tbody>
@@ -341,13 +364,13 @@ function BacktestingRiskTab() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Card className="bg-[#111827] border-[#1E293B]">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <Shield className="w-5 h-5 text-[#FF6200]" />
+            <CardTitle className="text-foreground flex items-center gap-2">
+              <Shield className="w-5 h-5 text-primary" />
               Risk Analysis
             </CardTitle>
-            <p className="text-sm text-[#64748B]">Risk-adjusted performance metrics</p>
+            <p className="text-sm text-muted-foreground">Risk-adjusted performance metrics</p>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
@@ -355,25 +378,25 @@ function BacktestingRiskTab() {
                 <TooltipProvider key={metric.name}>
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <div className="p-4 bg-[#0d1117] rounded-xl border border-[#1E293B] cursor-help hover:border-[#FF6200]/30 transition-colors">
+                      <div className="p-4 bg-background rounded-xl border border-border cursor-help hover:border-primary/30 transition-colors">
                         <div className="flex items-center justify-between mb-2">
-                          <span className="text-[#64748B] text-sm">{metric.name}</span>
-                          {metric.status === 'good' && <CheckCircle className="w-4 h-4 text-[#22c55e]" />}
+                          <span className="text-muted-foreground text-sm">{metric.name}</span>
+                          {metric.status === 'good' && <CheckCircle className="w-4 h-4 text-[#10B981]" />}
                           {metric.status === 'neutral' && <Info className="w-4 h-4 text-[#F59E0B]" />}
                         </div>
                         <div className="flex items-baseline gap-2">
-                          <span className="text-2xl font-bold text-white">{metric.value}</span>
-                          <span className="text-xs text-[#64748B]">vs {metric.benchmark}</span>
+                          <span className="text-2xl font-bold text-foreground">{metric.value}</span>
+                          <span className="text-xs text-muted-foreground">vs {metric.benchmark}</span>
                         </div>
                       </div>
                     </TooltipTrigger>
-                    <TooltipContent className="bg-[#1e293b] border-[#334155] text-white text-[10px]">
+                    <TooltipContent className="bg-muted border-border text-foreground text-[10px]">
                       {metric.name === 'Volatility' && "Annualized price fluctuation (Standard Deviation). Lower is usually better."}
                       {metric.name === 'Sharpe Ratio' && "Return per unit of total risk. Higher indicates better risk-adjusted performance."}
                       {metric.name === 'Sortino Ratio' && "Return per unit of downside risk. Superior to Sharpe for asymmetric distributions."}
                       {metric.name === 'Max Drawdown' && "The maximum observed loss from a peak to a trough. Measures crash risk."}
                       {metric.name === 'Beta' && "Measures sensitivity to the NIFTY 50 benchmark. 1.0 means it moves with the market."}
-                      {metric.name === 'Alpha' && "Excess return over the benchmark. Measures the value added by the QUBO solver."}
+                      {metric.name === 'Alpha' && "Excess return over the benchmark. Measures the value added by the Qurve solver."}
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -389,13 +412,13 @@ function BacktestingRiskTab() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.2 }}
       >
-        <Card className="bg-[#111827] border-[#1E293B]">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <TrendingDown className="w-5 h-5 text-[#f2362c]" />
+            <CardTitle className="text-foreground flex items-center gap-2">
+              <TrendingDown className="w-5 h-5 text-destructive" />
               Drawdown Analysis
             </CardTitle>
-            <p className="text-sm text-[#64748B]">Underwater curve showing peak-to-trough declines</p>
+            <p className="text-sm text-muted-foreground">Underwater curve showing peak-to-trough declines</p>
           </CardHeader>
           <CardContent>
             <div className="h-48">
@@ -403,21 +426,34 @@ function BacktestingRiskTab() {
                 <AreaChart data={EQUITY_DATA}>
                   <defs>
                     <linearGradient id="drawdownGradient2" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#f2362c" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#f2362c" stopOpacity={0}/>
+                      <stop offset="5%" stopColor="#EF4444" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#EF4444" stopOpacity={0}/>
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1E293B" />
                   <XAxis dataKey="month" stroke="#64748B" />
                   <YAxis stroke="#64748B" />
                   <RechartsTooltip 
-                    contentStyle={{ backgroundColor: '#111827', border: '1px solid #1E293B' }}
-                    labelStyle={{ color: '#94A3B8' }}
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-card border border-border p-2 rounded shadow-sm text-xs text-foreground">
+                            <p className="text-muted-foreground">{label}</p>
+                            {payload.map((item, i) => (
+                              <p key={i} style={{ color: item.color }}>
+                                {item.name}: {item.value}
+                              </p>
+                            ))}
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
                   />
                   <Area 
                     type="monotone" 
                     dataKey="drawdown" 
-                    stroke="#f2362c" 
+                    stroke="#EF4444" 
                     fill="url(#drawdownGradient2)" 
                     strokeWidth={2}
                   />
@@ -461,10 +497,10 @@ function GPUTelemetryTab() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <Card className="bg-[#111827] border-[#1E293B]">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white flex items-center gap-2">
-              <Cpu className="w-5 h-5 text-[#FF6200]" />
+            <CardTitle className="text-foreground flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-primary" />
               GPU Control Panel
             </CardTitle>
           </CardHeader>
@@ -500,9 +536,9 @@ function GPUTelemetryTab() {
             {/* GPU Metrics */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: 'GPU Utilization', value: displayMetrics.utilization, icon: Gauge, color: '#FF6200' },
-                { label: 'VRAM Usage', value: displayMetrics.vram, icon: MemoryStick, color: '#0048B4' },
-                { label: 'Temperature', value: displayMetrics.temperature, icon: Thermometer, color: displayMetrics.temperature > 80 ? '#f2362c' : '#22c55e' },
+                { label: 'GPU Utilization', value: displayMetrics.utilization, icon: Gauge, color: '#7C3AED' },
+                { label: 'VRAM Usage', value: displayMetrics.vram, icon: MemoryStick, color: '#3B82F6' },
+                { label: 'Temperature', value: displayMetrics.temperature, icon: Thermometer, color: displayMetrics.temperature > 80 ? '#EF4444' : '#10B981' },
                 { label: 'Power Draw', value: displayMetrics.power, suffix: 'W', icon: Zap, color: '#a855f7' },
               ].map((metric) => (
                 <div key={metric.label} className="p-4 bg-[#0d1117] rounded-xl border border-[#1E293B]">
@@ -535,9 +571,9 @@ function GPUTelemetryTab() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Card className="bg-[#111827] border-[#1E293B]">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white">Solver Logs</CardTitle>
+            <CardTitle className="text-foreground">Solver Logs</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="bg-[#0d1117] rounded-xl p-4 font-mono text-xs h-48 overflow-y-auto">
@@ -580,20 +616,20 @@ function ConfigurationTab() {
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
       >
-        <Card className="bg-[#111827] border-[#1E293B]">
+        <Card className="bg-card border-border">
           <CardHeader>
             <CardTitle className="text-white flex items-center gap-2">
-              <Sliders className="w-5 h-5 text-[#FF6200]" />
-              QUBO Parameters
+              <Sliders className="w-5 h-5 text-primary" />
+              Qurve Parameters
             </CardTitle>
-            <p className="text-sm text-[#64748B]">Configure optimization constraints</p>
+            <p className="text-sm text-muted-foreground">Configure optimization constraints</p>
           </CardHeader>
           <CardContent className="space-y-6">
             {/* Cardinality */}
             <div>
               <div className="flex justify-between mb-2">
                 <label className="text-white text-sm">Target Holdings (Cardinality)</label>
-                <span className="text-[#FF6200] font-mono">{config.cardinality}</span>
+                <span className="text-primary font-mono">{config.cardinality}</span>
               </div>
               <input
                 type="range"
@@ -601,7 +637,7 @@ function ConfigurationTab() {
                 max="20"
                 value={config.cardinality}
                 onChange={(e) => setConfig({ ...config, cardinality: parseInt(e.target.value) })}
-                className="w-full h-2 bg-[#1E293B] rounded-lg appearance-none cursor-pointer accent-[#FF6200]"
+                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-[#7C3AED]"
               />
               <div className="flex justify-between text-xs text-[#64748B] mt-1">
                 <span>5</span>
@@ -613,7 +649,7 @@ function ConfigurationTab() {
             <div>
               <div className="flex justify-between mb-2">
                 <label className="text-white text-sm">Risk Tolerance</label>
-                <span className="text-[#FF6200] font-mono">{(config.riskTolerance * 100).toFixed(0)}%</span>
+                <span className="text-primary font-mono">{(config.riskTolerance * 100).toFixed(0)}%</span>
               </div>
               <input
                 type="range"
@@ -621,7 +657,7 @@ function ConfigurationTab() {
                 max="100"
                 value={config.riskTolerance * 100}
                 onChange={(e) => setConfig({ ...config, riskTolerance: parseInt(e.target.value) / 100 })}
-                className="w-full h-2 bg-[#1E293B] rounded-lg appearance-none cursor-pointer accent-[#FF6200]"
+                className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-[#7C3AED]"
               />
             </div>
 
@@ -641,7 +677,7 @@ function ConfigurationTab() {
               <div>
                 <div className="flex justify-between mb-2">
                   <label className="text-white text-sm">Max Sector Exposure</label>
-                  <span className="text-[#FF6200] font-mono">{config.maxSectorExposure}%</span>
+                  <span className="text-primary font-mono">{config.maxSectorExposure}%</span>
                 </div>
                 <input
                   type="range"
@@ -649,7 +685,7 @@ function ConfigurationTab() {
                   max="50"
                   value={config.maxSectorExposure}
                   onChange={(e) => setConfig({ ...config, maxSectorExposure: parseInt(e.target.value) })}
-                  className="w-full h-2 bg-[#1E293B] rounded-lg appearance-none cursor-pointer accent-[#FF6200]"
+                  className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-[#7C3AED]"
                 />
               </div>
             )}
@@ -660,7 +696,7 @@ function ConfigurationTab() {
               <select
                 value={config.binaryBits}
                 onChange={(e) => setConfig({ ...config, binaryBits: parseInt(e.target.value) })}
-                className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#FF6200]/50"
+                className="w-full px-4 py-3 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:border-primary/50"
               >
                 <option value={5}>5 bits (3.125% precision)</option>
                 <option value={6}>6 bits (1.56% precision)</option>
@@ -675,7 +711,7 @@ function ConfigurationTab() {
               <select
                 value={config.solverMode}
                 onChange={(e) => setConfig({ ...config, solverMode: e.target.value })}
-                className="w-full px-4 py-3 bg-[#0d1117] border border-[#1E293B] rounded-xl text-white focus:outline-none focus:border-[#FF6200]/50"
+                className="w-full px-4 py-3 bg-background border border-border rounded-xl text-foreground focus:outline-none focus:border-primary/50"
               >
                 <option value="hybrid">Hybrid Quantum-Classical</option>
                 <option value="dwave_hybrid">D-Wave Hybrid</option>
@@ -693,9 +729,9 @@ function ConfigurationTab() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.1 }}
       >
-        <Card className="bg-[#111827] border-[#1E293B]">
+        <Card className="bg-card border-border">
           <CardHeader>
-            <CardTitle className="text-white">Automation</CardTitle>
+            <CardTitle className="text-foreground">Automation</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between p-4 bg-[#0d1117] rounded-xl">
@@ -733,7 +769,7 @@ function ConfigurationTab() {
             toast.success('Configuration saved successfully');
             toast.info('To run optimization with these params, use the Optimize button on the Overview tab.');
           }}
-          className="w-full bg-gradient-to-r from-[#FF6200] to-[#FF8533] text-white"
+          className="w-full bg-primary hover:bg-primary/90 text-primary-foreground glow-purple"
         >
           Save Configuration
         </Button>
@@ -746,21 +782,24 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
   const [optimizationTaskId, setOptimizationTaskId] = useState<string | null>(null);
-  const [solverMode, setSolverMode] = useState<SolverMode>('sb');
+  const [solverMode, setSolverMode] = useState<SolverMode>('auto');
 
   // Real API data hooks
+  const queryClient = useQueryClient();
   const { data: portfolioData, isLoading: isPortfolioLoading, error: portfolioError } = usePortfolio();
   const runOptimization = useRunOptimization();
   const { data: taskStatus } = useOptimizationStatus(optimizationTaskId);
   const { data: solverData } = useSolvers();
   const solverOptions = solverData?.solvers ?? [
+    { id: 'auto', label: 'Auto (Smart Router)', status: 'available' },
     { id: 'hybrid', label: 'Hybrid Quantum-Classical', status: 'available' },
-    { id: 'classical', label: 'Classical Fallback', status: 'available' },
-    { id: 'sb', label: 'Local SB', status: 'available' },
-    { id: 'neal', label: 'Simulated Annealing', status: 'not_installed' },
-    { id: 'dwave_hybrid', label: 'D-Wave Hybrid', status: 'not_installed' },
-    { id: 'dwave_qpu', label: 'D-Wave QPU', status: 'not_installed' },
-    { id: 'qiskit_qaoa', label: 'Qiskit QAOA', status: 'not_installed' },
+    { id: 'classical', label: 'Classical (Multi-Strategy)', status: 'available' },
+    { id: 'sb', label: 'GPU Simulated Bifurcation', status: 'available' },
+    { id: 'braket', label: 'AWS Braket LocalSimulator', status: 'not_installed' },
+    { id: 'neal', label: 'D-Wave Simulated Annealing', status: 'not_installed' },
+    { id: 'dwave_hybrid', label: 'D-Wave Leap Hybrid', status: 'not_installed' },
+    { id: 'dwave_qpu', label: 'D-Wave Direct QPU', status: 'not_installed' },
+    { id: 'qiskit_qaoa', label: 'IBM Qiskit QAOA', status: 'not_installed' },
   ];
 
   useEffect(() => {
@@ -771,13 +810,21 @@ export default function Dashboard() {
   // Handle optimization completion
   useEffect(() => {
     if (taskStatus?.status === 'complete') {
-      toast.success('Optimization complete!', { description: `Sharpe: ${taskStatus.result?.metrics.sharpe_ratio.toFixed(4)}` });
+      if (taskStatus.result) {
+        queryClient.setQueryData(['portfolio'], taskStatus.result);
+      }
+      const fallback = taskStatus.result?.solver_metadata?.penalty_weights?.fallback_reason;
+      if (fallback) {
+        toast.warning('Solver Fallback Triggered', { description: String(fallback) });
+      } else {
+        toast.success('Optimization complete!', { description: `Sharpe: ${taskStatus.result?.metrics.sharpe_ratio.toFixed(4)}` });
+      }
       setOptimizationTaskId(null);
     } else if (taskStatus?.status === 'failed') {
       toast.error('Optimization failed', { description: taskStatus.error });
       setOptimizationTaskId(null);
     }
-  }, [taskStatus?.status]);
+  }, [taskStatus?.status, taskStatus?.result, queryClient]);
 
   const handleExport = () => {
     toast.success('Portfolio report exported', { description: 'Downloaded as PDF' });
@@ -790,7 +837,7 @@ export default function Dashboard() {
         risk_tolerance: 0.5,
         max_sector_exposure: 0.25,
         binary_bits: 7,
-        solver_mode: solverMode,
+        requested_solver: solverMode,
         trajectories: 256,
       },
       {
@@ -808,7 +855,7 @@ export default function Dashboard() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-96">
-        <div className="w-8 h-8 border-2 border-[#FF6200]/30 border-t-[#FF6200] rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
       </div>
     );
   }
@@ -819,26 +866,26 @@ export default function Dashboard() {
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center justify-between pb-4 border-b border-[#1E293B]"
+          className="flex items-center justify-between pb-4 border-b border-border"
         >
           <div>
             <div className="flex items-center gap-3 mb-1">
-              <BarChart3 className="w-5 h-5 text-[#FF6200]" />
-              <h1 className="text-2xl font-bold text-white tracking-tight">QUBO COMMAND CENTER</h1>
+              <BarChart3 className="w-5 h-5 text-primary" />
+              <h1 className="text-2xl font-bold text-foreground tracking-tight">Qurve Command Center</h1>
               {optimizationTaskId && taskStatus && (
-                <span className="px-2 py-0.5 rounded text-xs bg-[#0048B4]/20 text-[#0048B4] flex items-center gap-1">
+                <span className="px-2 py-0.5 rounded text-xs bg-primary/20 text-primary flex items-center gap-1">
                   <Loader2 className="w-3 h-3 animate-spin" />
                   {taskStatus.step} ({taskStatus.progress.toFixed(0)}%)
                 </span>
               )}
             </div>
-            <p className="text-[#64748B] text-sm">Portfolio Optimization Dashboard • NIFTY 50 Universe</p>
+            <p className="text-muted-foreground text-sm">Portfolio Optimization Dashboard • NIFTY 50 Universe</p>
           </div>
           <div className="flex items-center gap-3">
             <select
               value={solverMode}
               onChange={(event) => setSolverMode(event.target.value as SolverMode)}
-              className="h-9 rounded bg-[#111827] border border-[#1E293B] px-3 text-xs text-[#E5E7EB] outline-none"
+              className="h-9 rounded bg-card border border-border px-3 text-xs text-foreground outline-none"
             >
               {solverOptions.map((solver) => (
                 <option key={solver.id} value={solver.id}>
@@ -849,7 +896,7 @@ export default function Dashboard() {
             <Button
               onClick={handleRunOptimization}
               disabled={runOptimization.isPending || !!optimizationTaskId}
-              className="bg-gradient-to-r from-[#FF6200] to-[#FF8533] text-white"
+              className="bg-primary hover:bg-primary/90 text-primary-foreground glow-purple"
             >
               {(runOptimization.isPending || optimizationTaskId) ? (
                 <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Optimizing...</>
@@ -860,7 +907,7 @@ export default function Dashboard() {
           </div>
         </motion.div>
 
-        <Card className="bg-[#111827] border-[#1E293B]">
+        <Card className="bg-card border-border">
           <CardContent className="p-8">
             <div className="max-w-2xl">
               <div className="flex items-center gap-2 mb-3">
@@ -929,27 +976,25 @@ export default function Dashboard() {
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex items-center justify-between pb-4 border-b border-[#1E293B]"
+        className="flex flex-col md:flex-row items-center justify-between gap-4 pb-4 border-b border-border"
       >
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <BarChart3 className="w-5 h-5 text-[#FF6200]" />
-            <h1 className="text-2xl font-bold text-white tracking-tight">QUBO COMMAND CENTER</h1>
-            <span className="px-2 py-0.5 rounded text-xs bg-[#22c55e]/20 text-[#22c55e]">Live Result</span>
-            {optimizationTaskId && taskStatus && (
-              <span className="px-2 py-0.5 rounded text-xs bg-[#0048B4]/20 text-[#0048B4] flex items-center gap-1">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                {taskStatus.step} ({taskStatus.progress.toFixed(0)}%)
-              </span>
-            )}
-          </div>
-          <p className="text-[#64748B] text-sm">Portfolio Optimization Dashboard • NIFTY 50 Universe</p>
+        <div className="flex items-center gap-3">
+          <BarChart3 className="w-5 h-5 text-primary" />
+          <h1 className="text-xl font-bold text-foreground tracking-tight">Qurve Command Center</h1>
+          <span className="px-2 py-0.5 rounded text-xs bg-[#10B981]/20 text-[#10B981]">Live Result</span>
+          {optimizationTaskId && taskStatus && (
+            <span className="px-2 py-0.5 rounded text-xs bg-primary/20 text-primary flex items-center gap-1">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              {taskStatus.step} ({taskStatus.progress.toFixed(0)}%)
+            </span>
+          )}
+          <span className="text-muted-foreground text-sm border-l border-border pl-3 ml-1 hidden lg:block">NIFTY 50 Universe</span>
         </div>
         <div className="flex items-center gap-3">
           <select
             value={solverMode}
             onChange={(event) => setSolverMode(event.target.value as SolverMode)}
-            className="h-9 rounded bg-[#111827] border border-[#1E293B] px-3 text-xs text-[#E5E7EB] outline-none"
+            className="h-9 rounded bg-card border border-border px-3 text-xs text-foreground outline-none"
           >
             {solverOptions.map((solver) => (
               <option key={solver.id} value={solver.id}>
@@ -957,18 +1002,14 @@ export default function Dashboard() {
               </option>
             ))}
           </select>
-          <div className="flex items-center gap-2 px-3 py-2 rounded bg-[#111827] border border-[#1E293B] text-[#94A3B8] text-xs font-mono">
+          <div className="hidden xl:flex items-center gap-2 px-3 py-2 rounded bg-card border border-border text-muted-foreground text-xs font-mono h-9">
             <Clock className="w-3 h-3" />
-            <span>Time to Solve: {solveTime}</span>
-          </div>
-          <div className="flex items-center gap-2 px-3 py-2 rounded bg-[#111827] border border-[#1E293B] text-[#94A3B8] text-xs font-mono">
-            <Calendar className="w-3 h-3" />
-            <span>{new Date().toLocaleDateString('en-US', { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}</span>
+            <span>{solveTime}</span>
           </div>
           <Button
             onClick={handleRunOptimization}
             disabled={runOptimization.isPending || !!optimizationTaskId}
-            className="bg-gradient-to-r from-[#FF6200] to-[#FF8533] text-white"
+            className="bg-primary hover:bg-primary/90 text-primary-foreground glow-purple h-9"
           >
             {(runOptimization.isPending || optimizationTaskId) ? (
               <><Loader2 className="w-3 h-3 mr-2 animate-spin" />Optimizing...</>
@@ -976,7 +1017,7 @@ export default function Dashboard() {
               <><Zap className="w-3 h-3 mr-2" />Optimize</>
             )}
           </Button>
-          <Button onClick={handleExport} variant="outline" size="sm" className="border-[#1E293B] text-[#94A3B8] hover:text-white hover:border-[#FF6200] bg-[#111827]">
+          <Button onClick={handleExport} variant="outline" size="sm" className="border-border text-muted-foreground hover:text-foreground hover:border-primary bg-card h-9 hidden md:flex">
             <Download className="w-3 h-3 mr-2" />
             Export
           </Button>
@@ -984,7 +1025,7 @@ export default function Dashboard() {
       </motion.div>
 
       {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 border-b border-[#1E293B]">
+      <div className="flex items-center gap-2 border-b border-border">
         {[
           { id: 'overview', label: 'Overview', icon: BarChart3 },
           { id: 'analytics', label: 'Backtesting & Risk', icon: LineChartIcon },
@@ -996,8 +1037,8 @@ export default function Dashboard() {
             onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors border-b-2 ${
               activeTab === tab.id 
-                ? 'text-[#FF6200] border-[#FF6200]' 
-                : 'text-[#64748B] border-transparent hover:text-white'
+                ? 'text-primary border-primary' 
+                : 'text-muted-foreground border-transparent hover:text-foreground'
             }`}
           >
             <tab.icon className="w-4 h-4" />
@@ -1010,52 +1051,56 @@ export default function Dashboard() {
       {activeTab === 'overview' && (
         <>
           {/* KPI Cards Row */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             {kpiCards.map((card, i) => (
-              <KPICard key={card.title} {...card} delay={i * 0.1} />
+              <div key={card.title} className="h-full">
+                <KPICard {...card} delay={i * 0.1} />
+              </div>
             ))}
           </div>
 
           {/* Main Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Candlestick Chart - Takes 2 columns */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 lg:gap-6">
+            {/* Candlestick Chart - Takes 8 columns */}
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.4 }}
-              className="lg:col-span-2"
+              className="lg:col-span-8 h-full"
             >
               <CandlestickChart 
                 title="Predictive Alpha" 
                 symbol="QUBO-NIFTY OPTIMIZED" 
-                height={380}
+                height={520}
+                showTimeframes={true}
               />
             </motion.div>
 
-            {/* Right Panel - Multiple Widgets */}
-            <div className="space-y-4">
+            {/* Right Panel - Takes 4 columns */}
+            <div className="lg:col-span-4 flex flex-col gap-4 lg:gap-6 h-full">
               {/* Sector Allocation */}
               <motion.div
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.5 }}
+                className="h-[280px] lg:h-auto lg:flex-1"
               >
-                <Card className="bg-[#111827] border-[#1E293B]">
-                  <CardHeader className="flex flex-row items-center gap-2 py-3 px-4 border-b border-[#1E293B]">
-                    <PieChart className="w-4 h-4 text-[#FF6200]" />
-                    <CardTitle className="text-white text-sm font-semibold">Asset Allocation</CardTitle>
+                <Card className="bg-card border-border h-full flex flex-col">
+                  <CardHeader className="flex flex-row items-center gap-2 py-2.5 px-4 border-b border-border">
+                    <PieChart className="w-4 h-4 text-primary" />
+                    <CardTitle className="text-foreground text-sm font-semibold">Asset Allocation</CardTitle>
                   </CardHeader>
-                  <CardContent className="p-4">
+                  <CardContent className="p-3 flex-1 flex flex-col justify-between">
                     <SectorChart sectors={PORTFOLIO_DATA.sector_allocation} />
                     <div className="mt-4 space-y-2">
-                      {Object.entries(PORTFOLIO_DATA.sector_allocation)
+                      {Object.entries(PORTFOLIO_DATA.sector_allocation || {})
                         .sort((a, b) => b[1] - a[1])
                         .map(([sector, weight], i) => (
                       <div key={sector} className="flex items-center justify-between text-xs">
                         <div className="flex items-center gap-2">
                           <div 
                             className="w-2 h-2 rounded-full" 
-                            style={{ backgroundColor: ['#FF6200', '#0048B4', '#22c55e', '#f2362c', '#a855f7'][i] }}
+                            style={{ backgroundColor: ['#7C3AED', '#3B82F6', '#06B6D4', '#0D9488', '#10B981', '#6D28D9', '#2563EB'][i % 7] }}
                           />
                           <span className="text-[#94A3B8]">{sector}</span>
                         </div>
@@ -1072,21 +1117,22 @@ export default function Dashboard() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.6 }}
+            className="h-[280px] lg:h-auto"
           >
-            <Card className="bg-[#111827] border-[#1E293B]">
-              <CardHeader className="flex flex-row items-center gap-2 py-3 px-4 border-b border-[#1E293B]">
-                <TrendingUp className="w-4 h-4 text-[#22c55e]" />
-                <CardTitle className="text-white text-sm font-semibold">Equity Curve</CardTitle>
+            <Card className="bg-card border-border h-full flex flex-col">
+              <CardHeader className="flex flex-row items-center gap-2 py-2.5 px-4 border-b border-border">
+                <TrendingUp className="w-4 h-4 text-[#10B981]" />
+                <CardTitle className="text-foreground text-sm font-semibold">Equity Curve</CardTitle>
               </CardHeader>
-              <CardContent className="p-4">
+              <CardContent className="p-3 flex-1 flex flex-col justify-between">
                 <EquityCurveChart />
                 <div className="flex items-center justify-center gap-4 mt-2 text-xs">
                   <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-[#FF6200]" />
+                    <div className="w-2 h-2 rounded-full bg-primary" />
                     <span className="text-[#94A3B8]">Portfolio</span>
                   </div>
                   <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-[#0048B4]" />
+                    <div className="w-2 h-2 rounded-full bg-[#3B82F6]" />
                     <span className="text-[#94A3B8]">NIFTY 50</span>
                   </div>
                 </div>
@@ -1097,21 +1143,21 @@ export default function Dashboard() {
       </div>
 
       {/* Bottom Row - Holdings & Risk */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6 mt-4 lg:mt-6">
         {/* Holdings Table */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.7 }}
         >
-          <Card className="bg-[#111827] border-[#1E293B]">
-            <CardHeader className="flex flex-row items-center justify-between py-3 px-4 border-b border-[#1E293B]">
+          <Card className="bg-card border-border">
+            <CardHeader className="flex flex-row items-center justify-between py-2.5 px-4 border-b border-border">
               <div className="flex items-center gap-2">
-                <Layers className="w-4 h-4 text-[#FF6200]" />
-                <CardTitle className="text-white text-sm font-semibold">Portfolio Holdings</CardTitle>
-                <span className="text-[#64748B] text-xs">({Object.keys(PORTFOLIO_DATA.portfolio).length} assets)</span>
+                <Layers className="w-4 h-4 text-primary" />
+                <CardTitle className="text-foreground text-sm font-semibold">Portfolio Holdings</CardTitle>
+                <span className="text-[#64748B] text-xs">({Object.keys(PORTFOLIO_DATA.portfolio || {}).length} assets)</span>
               </div>
-              <Button variant="outline" size="sm" className="border-[#1E293B] text-[#94A3B8] hover:text-white hover:border-[#FF6200] bg-transparent">
+              <Button variant="outline" size="sm" className="border-border text-muted-foreground hover:text-foreground hover:border-primary bg-transparent">
                 View All
                 <ArrowUpRight className="w-3 h-3 ml-2" />
               </Button>
@@ -1127,7 +1173,7 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody>
-                    {Object.entries(PORTFOLIO_DATA.portfolio)
+                    {Object.entries(PORTFOLIO_DATA.portfolio || {})
                       .sort((a, b) => b[1].weight - a[1].weight)
                       .map(([ticker, data]) => {
                         return (
@@ -1164,69 +1210,71 @@ export default function Dashboard() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.8 }}
         >
-          <Card className="bg-[#111827] border-[#1E293B]">
-            <CardHeader className="flex flex-row items-center gap-2 py-3 px-4 border-b border-[#1E293B]">
+          <Card className="bg-card border-border h-full flex flex-col">
+            <CardHeader className="flex flex-row items-center gap-2 py-2.5 px-4 border-b border-border">
               <Shield className="w-4 h-4 text-[#f2362c]" />
-              <CardTitle className="text-white text-sm font-semibold">Risk Analytics</CardTitle>
+              <CardTitle className="text-foreground text-sm font-semibold">Risk Analytics</CardTitle>
             </CardHeader>
-            <CardContent className="p-4 space-y-4">
+            <CardContent className="p-4 space-y-4 flex-1 flex flex-col">
               {/* Risk Metrics Grid */}
               <div className="grid grid-cols-2 gap-4">
-                <div className="p-3 rounded bg-[#0a0f1c] border border-[#1E293B]">
-                  <p className="text-[#64748B] text-xs mb-1">Volatility</p>
+                <div className="p-4 rounded bg-[#0a0f1c] border border-[#1E293B]">
+                  <p className="text-[#64748B] text-xs mb-2">Volatility</p>
                   <p className="text-white font-mono font-bold">{(PORTFOLIO_DATA.metrics.volatility * 100).toFixed(1)}%</p>
                 </div>
-                <div className="p-3 rounded bg-[#0a0f1c] border border-[#1E293B]">
-                  <p className="text-[#64748B] text-xs mb-1">Sharpe Ratio</p>
+                <div className="p-4 rounded bg-[#0a0f1c] border border-[#1E293B]">
+                  <p className="text-[#64748B] text-xs mb-2">Sharpe Ratio</p>
                   <p className="text-white font-mono font-bold">{PORTFOLIO_DATA.metrics.sharpe_ratio.toFixed(2)}</p>
                 </div>
-                <div className="p-3 rounded bg-[#0a0f1c] border border-[#1E293B]">
-                  <p className="text-[#64748B] text-xs mb-1">Sortino Ratio</p>
+                <div className="p-4 rounded bg-[#0a0f1c] border border-[#1E293B]">
+                  <p className="text-[#64748B] text-xs mb-2">Sortino Ratio</p>
                   <p className="text-white font-mono font-bold">{PORTFOLIO_DATA.metrics.sortino_ratio.toFixed(2)}</p>
                 </div>
-                <div className="p-3 rounded bg-[#0a0f1c] border border-[#1E293B]">
-                  <p className="text-[#64748B] text-xs mb-1">Variance</p>
+                <div className="p-4 rounded bg-[#0a0f1c] border border-[#1E293B]">
+                  <p className="text-[#64748B] text-xs mb-2">Variance</p>
                   <p className="text-white font-mono font-bold">{PORTFOLIO_DATA.metrics.variance.toFixed(4)}</p>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="p-3 rounded bg-[#0a0f1c] border border-[#1E293B]">
-                  <p className="text-[#64748B] text-xs mb-1">Feasibility</p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 rounded bg-[#0a0f1c] border border-[#1E293B]">
+                  <p className="text-[#64748B] text-xs mb-2">Feasibility</p>
                   <p className={`font-mono font-bold ${PORTFOLIO_DATA.constraint_verification?.all_satisfied ? 'text-[#22c55e]' : 'text-[#F59E0B]'}`}>
                     {PORTFOLIO_DATA.constraint_verification?.all_satisfied ? 'Passed' : 'Review'}
                   </p>
-                  <p className="text-[#64748B] text-[11px] mt-1">
-                    {PORTFOLIO_DATA.constraint_verification?.cardinality ?? 0}/{PORTFOLIO_DATA.parameters.cardinality} assets
+                  <p className="text-[#64748B] text-[11px] mt-2">
+                    {PORTFOLIO_DATA.constraint_verification?.cardinality ?? 0}/{PORTFOLIO_DATA.parameters?.cardinality ?? 15} assets
                   </p>
                 </div>
-                <div className="p-3 rounded bg-[#0a0f1c] border border-[#1E293B]">
-                  <p className="text-[#64748B] text-xs mb-1">Solver</p>
-                  <p className="text-white font-mono font-bold">{String(solverPenalty.solver ?? 'unknown')}</p>
-                  <p className="text-[#64748B] text-[11px] mt-1">{solverMeta?.qubo_variables ?? 0} variables</p>
+                <div className="p-4 rounded bg-[#0a0f1c] border border-[#1E293B]">
+                  <p className="text-[#64748B] text-xs mb-2">Solver Used</p>
+                  <p className="text-white font-mono font-bold text-sm truncate">{solverMeta?.actual_solver_used ?? String(solverPenalty.solver ?? 'unknown')}</p>
+                  <p className="text-[#64748B] text-[11px] mt-2">{solverMeta?.qubo_variables ?? 0} variables</p>
                 </div>
-                <div className="p-3 rounded bg-[#0a0f1c] border border-[#1E293B]">
-                  <p className="text-[#64748B] text-xs mb-1">Energy</p>
+                <div className="p-4 rounded bg-[#0a0f1c] border border-[#1E293B]">
+                  <p className="text-[#64748B] text-xs mb-2">Energy</p>
                   <p className="text-white font-mono font-bold">
                     {typeof solverPenalty.energy === 'number' ? solverPenalty.energy.toFixed(3) : 'N/A'}
                   </p>
                 </div>
-                <div className="p-3 rounded bg-[#0a0f1c] border border-[#1E293B]">
-                  <p className="text-[#64748B] text-xs mb-1">Quantum Backend</p>
+                <div className="p-4 rounded bg-[#0a0f1c] border border-[#1E293B]">
+                  <p className="text-[#64748B] text-xs mb-2">Quantum Backend</p>
                   <p className="text-white font-mono font-bold">{String(solverPenalty.backend_name ?? solverPenalty.quantum_backend ?? 'local')}</p>
-                  <p className="text-[#64748B] text-[11px] mt-1">
+                  <p className="text-[#64748B] text-[11px] mt-2">
                     {String(solverPenalty.provider ?? 'local')} | Chain breaks: {solverPenalty.chain_break_fraction ?? 'N/A'}
                   </p>
                 </div>
               </div>
               
               {/* Drawdown Chart */}
-              <div>
-                <div className="flex items-center justify-between mb-2">
+              <div className="flex-1 flex flex-col min-h-[200px]">
+                <div className="flex items-center justify-between mb-3">
                   <span className="text-[#64748B] text-xs">Drawdown Analysis</span>
                   <span className="text-[#f2362c] text-xs font-mono">Simulated</span>
                 </div>
-                <DrawdownChart />
+                <div className="flex-1 bg-[#0a0f1c] rounded border border-[#1E293B] p-3">
+                  <DrawdownChart />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1238,23 +1286,24 @@ export default function Dashboard() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.9 }}
+            className="mt-4 lg:mt-6"
           >
-            <Card className="bg-[#111827] border-[#1E293B]">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-4 mb-4">
+            <Card className="bg-card border-border">
+              <CardContent className="p-3">
+                <div className="flex items-center gap-3 mb-3">
                   <Zap className="w-4 h-4 text-[#22c55e]" />
                   <span className="text-white text-sm font-semibold">GPU Optimization Status</span>
                   <span className="px-2 py-0.5 rounded text-xs bg-[#22c55e]/20 text-[#22c55e]">Active</span>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 lg:gap-6">
                   {[
-                    { label: 'GPU Utilization', value: 78, color: '#FF6200' },
-                    { label: 'VRAM Usage', value: 62, color: '#0048B4' },
-                    { label: 'Temperature', value: 68, color: '#22c55e' },
+                    { label: 'GPU Utilization', value: 78, color: '#7C3AED' },
+                    { label: 'VRAM Usage', value: 62, color: '#3B82F6' },
+                    { label: 'Temperature', value: 68, color: '#10B981' },
                     { label: 'Power Draw', value: 125, suffix: 'W', max: 150, color: '#a855f7' },
                   ].map((metric) => (
                     <div key={metric.label}>
-                      <div className="flex justify-between mb-2">
+                      <div className="flex justify-between mb-1.5">
                         <span className="text-[#64748B] text-xs">{metric.label}</span>
                         <span className="text-white text-xs font-mono font-medium">
                           {metric.value}{metric.suffix || '%'}

@@ -38,10 +38,10 @@ export default function Profile() {
   });
 
   const stats = [
-    { label: 'Portfolios Created', value: '24', icon: TrendingUp, color: '#FF6200' },
-    { label: 'Optimizations Run', value: '1,247', icon: Clock, color: '#0048B4' },
-    { label: 'Member Since', value: '2023', icon: Calendar, color: '#10B981' },
-    { label: 'Verification', value: 'Verified', icon: Shield, color: '#8B5CF6' },
+    { label: 'Portfolios Created', value: '24', icon: TrendingUp, color: '#7C3AED' },
+    { label: 'Optimizations Run', value: '1,247', icon: Clock, color: '#7C3AED' },
+    { label: 'Member Since', value: '2023', icon: Calendar, color: '#7C3AED' },
+    { label: 'Verification', value: 'Verified', icon: Shield, color: '#7C3AED' },
   ];
 
   const handleSave = async () => {
@@ -96,7 +96,7 @@ export default function Profile() {
       >
         <Card className="bg-[#111827]/50 border-[#1E293B] overflow-hidden">
           {/* Cover Image */}
-          <div className="h-32 bg-gradient-to-r from-[#FF6200]/30 via-[#0048B4]/30 to-[#FF6200]/30" />
+          <div className="h-32 bg-gradient-to-r from-[#7C3AED]/30 via-[#0048B4]/30 to-[#7C3AED]/30" />
           
           <CardContent className="p-6 -mt-12">
             <div className="flex flex-col md:flex-row items-start md:items-end gap-6">
@@ -104,7 +104,7 @@ export default function Profile() {
               <div className="relative">
                 <div 
                   onClick={handleAvatarClick}
-                  className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#FF6200] to-[#0048B4] flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity border-4 border-[#111827]"
+                  className="w-24 h-24 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#0048B4] flex items-center justify-center cursor-pointer hover:opacity-90 transition-opacity border-4 border-[#7C3AED]"
                 >
                   {isUploading ? (
                     <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -153,7 +153,7 @@ export default function Profile() {
               <Button
                 onClick={() => isEditing ? handleSave() : setIsEditing(true)}
                 disabled={isSaving}
-                className={isEditing ? 'bg-[#10B981] hover:bg-[#059669]' : 'bg-gradient-to-r from-[#FF6200] to-[#FF8533]'}
+                className={isEditing ? 'bg-[#7C3AED] hover:bg-[#8B5CF6]' : 'bg-gradient-to-r from-[#7C3AED] to-[#8B5CF6]'}
               >
                 {isEditing ? (
                   isSaving ? (

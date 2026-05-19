@@ -1,0 +1,17 @@
+# Quantum computing packages for QUBO Portfolio Optimizer
+# D-Wave Ocean SDK
+dwave-ocean-sdk>=9.3.0
+dwave-neal>=0.6.0
+dimod>=0.12.21
+dwave-system>=1.34.0
+
+# Qiskit ecosystem
+qiskit>=2.3.0
+qiskit-algorithms>=0.3.0
+qiskit-optimization>=0.7.0
+qiskit-ibm-runtime>=0.43.0
+
+# AWS Braket (optional - requires AWS credentials)
+# Uncomment if using AWS Braket services
+# braket>=1.80.0
+# amazon-braket-default-simulator>=1.15.0

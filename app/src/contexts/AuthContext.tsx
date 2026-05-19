@@ -70,7 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       formData.append('username', email);
       formData.append('password', _password);
 
-      const response = await fetch('/api/v1/auth/token', {
+      const response = await fetch('/api/auth/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -89,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('qubo_token', token);
 
       // Fetch user profile
-      const userResponse = await fetch('/api/v1/auth/users/me/', {
+      const userResponse = await fetch('/api/v1/auth/users/me', {
         headers: {
           'Authorization': `Bearer ${token}`
         }

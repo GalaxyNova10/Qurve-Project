@@ -1,35 +1,163 @@
-# Python
+# =============================================================================
+# Qurve Project - Strict .gitignore
+# SECURITY: No secrets, credentials, or environment-specific files allowed
+# =============================================================================
+
+# ── CRITICAL SECURITY: Never commit secrets ──────────────────────────────────
+.env
+.env.*
+!.env.example
+*.env
+apikey.json
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# ── Python ───────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ── Virtual Environments ─────────────────────────────────────────────────────
 .venv/
 .venv*/
 venv/
-venv10/
+venv*/
+ENV/
+env/
+env.bak/
+quantum_env/
 
-# Node/Vite
+# ── Python Tooling ───────────────────────────────────────────────────────────
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+*.py,cover
+
+# ── Node.js / Vite / React ──────────────────────────────────────────────────
 node_modules/
+bower_components/
 dist/
 *.tsbuildinfo
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Local configuration and generated artifacts
-.env
-*.env
-!.env.example
-qubo-backend/.env
-apikey.json
-qubo-backend/checkpoints/
-output/jobs/
-
-# OS/editor
-.DS_Store
-Thumbs.db
-.idea/
+# ── IDE / Editor ─────────────────────────────────────────────────────────────
 .vscode/
-.qoder/
-.skill-lock.json
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
 
+# ── OS Files ─────────────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+docker-compose.override.yml
+
+# ── Generated Artifacts ──────────────────────────────────────────────────────
+output/
+output/jobs/
+qubo-backend/checkpoints/
+qubo-backend/storage/
+qubo-backend/temp/
+qubo-backend/scratch/
+qubo-backend/secrets/
+qubo-backend/.hypothesis/
+qubo-backend/.pytest_cache/
+qubo-backend/venv/
+qubo-backend/venv10/
 qubo-backend/quantum_env/
 
+# ── Braket Worker ────────────────────────────────────────────────────────────
+qubo-braket-worker/.pytest_cache/
+qubo-braket-worker/.hypothesis/
+qubo-braket-worker/venv/
+qubo-braket-worker/__pycache__/
+
+# ── Frontend ─────────────────────────────────────────────────────────────────
+app/node_modules/
+app/dist/
+app/.vite/
+
+# ── CI/CD & Deployment ───────────────────────────────────────────────────────
+ci_cd_pipeline/.env
+deployment_standardization/.env
+security_hardening/.env
+performance_hardening/.env
+
+# ── Demo Mode ────────────────────────────────────────────────────────────────
+demo_mode/.env
+
+# ── Temporary & Debug Files ──────────────────────────────────────────────────
+*.tmp
+*.temp
+*.bak
+*.swp
+*.orig
+*.rej
+*.log
+*.pid
+*.seed
+*.pid.lock
+
+# ── Jupyter Notebooks ────────────────────────────────────────────────────────
+.ipynb_checkpoints/
+
+# ── AWS / Cloud Credentials ──────────────────────────────────────────────────
+.aws/
+*.aws
+aws-credentials.json
+aws-config.json
+
+# ── Terraform / Infrastructure ───────────────────────────────────────────────
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# ── Kubernetes ───────────────────────────────────────────────────────────────
+kubeconfig
+*.kubeconfig

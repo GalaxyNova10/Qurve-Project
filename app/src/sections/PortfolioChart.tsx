@@ -8,10 +8,10 @@ import { TrendingUp } from 'lucide-react';
 const generateChartData = () => {
   const dates = [];
   const niftyData = [];
-  const quboData = [];
+  const qurveData = [];
   
   let niftyValue = 100;
-  let quboValue = 100;
+  let qurveValue = 100;
   
   for (let i = 0; i < 252; i++) {
     const date = new Date();
@@ -23,21 +23,21 @@ const generateChartData = () => {
     niftyValue *= (1 + niftyReturn);
     niftyData.push(niftyValue);
     
-    // QUBO portfolio simulation (outperforming)
-    const quboReturn = Math.sin(i * 0.21 + 0.4) * 0.007 + Math.cos(i * 0.09) * 0.003;
-    quboValue *= (1 + quboReturn * 1.15); // 15% outperformance
-    quboData.push(quboValue);
+    // Qurve portfolio simulation (outperforming)
+    const qurveReturn = Math.sin(i * 0.21 + 0.4) * 0.007 + Math.cos(i * 0.09) * 0.003;
+    qurveValue *= (1 + qurveReturn * 1.15); // 15% outperformance
+    qurveData.push(qurveValue);
   }
   
-  return { dates, niftyData, quboData };
+  return { dates, niftyData, qurveData };
 };
 
 const PortfolioChart = () => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [timeRange, setTimeRange] = useState('1Y');
-  const [hoverData, setHoverData] = useState<{x: number, y: number, nifty: number, qubo: number} | null>(null);
+  const [hoverData, setHoverData] = useState<{x: number, y: number, nifty: number, qurve: number} | null>(null);
   
-  const { dates, niftyData, quboData } = generateChartData();
+  const { dates, niftyData, qurveData } = generateChartData();
   void dates; // Suppress unused variable warning
   
   useEffect(() => {
@@ -63,7 +63,7 @@ const PortfolioChart = () => {
     const chartHeight = rect.height - padding.top - padding.bottom;
     
     // Find min/max for scaling
-    const allData = [...niftyData, ...quboData];
+    const allData = [...niftyData, ...qurveData];
     const minValue = Math.min(...allData) * 0.95;
     const maxValue = Math.max(...allData) * 1.05;
     
@@ -72,7 +72,7 @@ const PortfolioChart = () => {
     const getY = (value: number) => padding.top + chartHeight - ((value - minValue) / (maxValue - minValue)) * chartHeight;
     
     // Draw grid lines
-    ctx.strokeStyle = 'rgba(30, 41, 59, 0.5)';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
     
     for (let i = 0; i <= 5; i++) {
@@ -112,15 +112,15 @@ const PortfolioChart = () => {
     });
     ctx.stroke();
     
-    // Draw QUBO portfolio line with gradient
+    // Draw Qurve portfolio line with gradient
     const gradient = ctx.createLinearGradient(0, padding.top, 0, rect.height - padding.bottom);
-    gradient.addColorStop(0, '#FF6200');
-    gradient.addColorStop(1, '#0048B4');
+    gradient.addColorStop(0, '#7C3AED');
+    gradient.addColorStop(1, '#06B6D4');
     
     ctx.strokeStyle = gradient;
     ctx.lineWidth = 3;
     ctx.beginPath();
-    quboData.forEach((value, i) => {
+    qurveData.forEach((value, i) => {
       const x = getX(i);
       const y = getY(value);
       if (i === 0) ctx.moveTo(x, y);
@@ -128,14 +128,14 @@ const PortfolioChart = () => {
     });
     ctx.stroke();
     
-    // Fill area under QUBO line
-    ctx.fillStyle = 'rgba(255, 98, 0, 0.1)';
+    // Fill area under Qurve line
+    ctx.fillStyle = 'rgba(124, 58, 237, 0.1)';
     ctx.beginPath();
-    ctx.moveTo(getX(0), getY(quboData[0]));
-    quboData.forEach((value, i) => {
+    ctx.moveTo(getX(0), getY(qurveData[0]));
+    qurveData.forEach((value, i) => {
       ctx.lineTo(getX(i), getY(value));
     });
-    ctx.lineTo(getX(quboData.length - 1), padding.top + chartHeight);
+    ctx.lineTo(getX(qurveData.length - 1), padding.top + chartHeight);
     ctx.lineTo(getX(0), padding.top + chartHeight);
     ctx.closePath();
     ctx.fill();
@@ -153,19 +153,19 @@ const PortfolioChart = () => {
       
       // Draw points
       const niftyY = getY(hoverData.nifty);
-      const quboY = getY(hoverData.qubo);
+      const qurveY = getY(hoverData.qurve);
       
       ctx.fillStyle = '#64748B';
       ctx.beginPath();
       ctx.arc(hoverData.x, niftyY, 5, 0, Math.PI * 2);
       ctx.fill();
       
-      ctx.fillStyle = '#FF6200';
+      ctx.fillStyle = '#7C3AED';
       ctx.beginPath();
-      ctx.arc(hoverData.x, quboY, 6, 0, Math.PI * 2);
+      ctx.arc(hoverData.x, qurveY, 6, 0, Math.PI * 2);
       ctx.fill();
     }
-  }, [dates, niftyData, quboData, hoverData]);
+  }, [dates, niftyData, qurveData, hoverData]);
   
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -184,7 +184,7 @@ const PortfolioChart = () => {
         x,
         y: e.clientY - rect.top,
         nifty: niftyData[index],
-        qubo: quboData[index]
+        qurve: qurveData[index]
       });
     }
   };
@@ -195,7 +195,7 @@ const PortfolioChart = () => {
   
   const timeRanges = ['1D', '1W', '1M', '3M', '1Y', 'ALL'];
   
-  const quboReturn = ((quboData[quboData.length - 1] - quboData[0]) / quboData[0]) * 100;
+  const qurveReturn = ((qurveData[qurveData.length - 1] - qurveData[0]) / qurveData[0]) * 100;
   const niftyReturn = ((niftyData[niftyData.length - 1] - niftyData[0]) / niftyData[0]) * 100;
   
   return (
@@ -204,11 +204,11 @@ const PortfolioChart = () => {
         <div className="flex items-center justify-between">
           <div>
             <CardTitle className="text-white text-lg flex items-center gap-2">
-              <TrendingUp className="w-5 h-5 text-[#FF6200]" />
+              <TrendingUp className="w-5 h-5 text-primary" />
               Portfolio Performance
             </CardTitle>
             <p className="text-sm text-[#64748B] mt-1">
-              QUBO Optimized vs NIFTY 50 Benchmark
+              Qurve Optimized vs NIFTY 50 Benchmark
             </p>
           </div>
           
@@ -221,7 +221,7 @@ const PortfolioChart = () => {
                 onClick={() => setTimeRange(range)}
                 className={`text-xs ${
                   timeRange === range 
-                    ? 'bg-[#FF6200] hover:bg-[#FF8533]' 
+                    ? 'bg-primary text-primary-foreground glow-purple' 
                     : 'bg-transparent border-[#1E293B] text-[#94A3B8] hover:text-white'
                 }`}
               >
@@ -234,10 +234,10 @@ const PortfolioChart = () => {
         {/* Legend */}
         <div className="flex items-center gap-6 mt-4">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-gradient-to-r from-[#FF6200] to-[#0048B4]"></div>
-            <span className="text-sm text-white font-medium">QUBO Portfolio</span>
+            <div className="w-3 h-3 rounded-full bg-gradient-to-r from-[#7C3AED] to-[#06B6D4]"></div>
+            <span className="text-sm text-white font-medium">Qurve Portfolio</span>
             <Badge className="badge-green ml-2">
-              +{quboReturn.toFixed(2)}%
+              +{qurveReturn.toFixed(2)}%
             </Badge>
           </div>
           <div className="flex items-center gap-2">
@@ -262,7 +262,7 @@ const PortfolioChart = () => {
           {/* Hover tooltip */}
           {hoverData && (
             <div 
-              className="absolute bg-[#111827] border border-[#1E293B] rounded-lg p-3 shadow-xl pointer-events-none"
+              className="absolute bg-card border border-border rounded-lg p-3 shadow-xl pointer-events-none"
               style={{
                 left: hoverData.x + 10,
                 top: hoverData.y - 50,
@@ -270,8 +270,8 @@ const PortfolioChart = () => {
               }}
             >
               <div className="text-xs text-[#94A3B8] mb-1">Portfolio Value</div>
-              <div className="text-sm font-bold text-[#FF6200]">
-                QUBO: {hoverData.qubo.toFixed(2)}
+              <div className="text-sm font-bold text-primary">
+                Qurve: {hoverData.qurve.toFixed(2)}
               </div>
               <div className="text-sm text-[#64748B]">
                 NIFTY: {hoverData.nifty.toFixed(2)}
@@ -296,7 +296,7 @@ const PortfolioChart = () => {
           </div>
           <div>
             <p className="text-xs text-[#64748B]">Information Ratio</p>
-            <p className="text-lg font-bold text-[#FF6200]">1.45</p>
+            <p className="text-lg font-bold text-primary">1.45</p>
           </div>
         </div>
       </CardContent>

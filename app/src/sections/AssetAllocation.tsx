@@ -26,8 +26,8 @@ const AssetAllocation = ({ portfolio }: AssetAllocationProps) => {
   
   // Colors for segments
   const colors = [
-    '#FF6200', '#0048B4', '#10B981', '#8B5CF6',
-    '#F59E0B', '#EC4899', '#06B6D4', '#84CC16'
+    '#7C3AED', '#3B82F6', '#06B6D4', '#0D9488',
+    '#10B981', '#6D28D9', '#2563EB', '#8B5CF6'
   ];
   
   useEffect(() => {
@@ -68,7 +68,7 @@ const AssetAllocation = ({ portfolio }: AssetAllocationProps) => {
       ctx.fill();
       
       // Border
-      ctx.strokeStyle = '#111827';
+      ctx.strokeStyle = '#0B0E14';
       ctx.lineWidth = 2;
       ctx.stroke();
       
@@ -137,7 +137,7 @@ const AssetAllocation = ({ portfolio }: AssetAllocationProps) => {
     <Card className="glass-card gradient-border h-full">
       <CardHeader className="pb-2">
         <CardTitle className="text-white text-lg flex items-center gap-2">
-          <PieChart className="w-5 h-5 text-[#0048B4]" />
+          <PieChart className="w-5 h-5 text-primary" />
           Asset Allocation
         </CardTitle>
       </CardHeader>
@@ -170,8 +170,8 @@ const AssetAllocation = ({ portfolio }: AssetAllocationProps) => {
               key={ticker}
               className={`flex items-center justify-between p-2 rounded-lg transition-all ${
                 hoveredSegment === index 
-                  ? 'bg-[#FF6200]/10' 
-                  : 'hover:bg-[#1E293B]/50'
+                  ? 'bg-primary/10' 
+                  : 'hover:bg-muted/50'
               }`}
               onMouseEnter={() => setHoveredSegment(index)}
               onMouseLeave={() => setHoveredSegment(null)}

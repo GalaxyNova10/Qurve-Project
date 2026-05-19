@@ -1,0 +1,201 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'qubo-production'
+    environment: 'production'
+
+rule_files:
+  - "alert_rules.yml"
+
+scrape_configs:
+  # QUBO Backend Metrics
+  - job_name: 'qubo-backend'
+    static_configs:
+      - targets: ['qubo-backend:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'qubo-backend-1'
+
+  # QUBO Frontend Metrics
+  - job_name: 'qubo-frontend'
+    static_configs:
+      - targets: ['qubo-frontend:80']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'qubo-frontend-1'
+
+  # PostgreSQL Metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'postgres-1'
+
+  # Redis Metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'redis-1'
+
+  # Nginx Metrics
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:80']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'nginx-1'
+
+  # Node Exporter (System Metrics)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'qubo-host-1'
+
+  # Docker Container Metrics
+  - job_name: 'docker-exporter'
+    static_configs:
+      - targets: ['docker-exporter:9323']
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'qubo-host-1'
+
+  # Custom QUBO Metrics
+  - job_name: 'qubo-metrics'
+    static_configs:
+      - targets: ['qubo-backend:8000']
+    metrics_path: '/api/v1/metrics'
+    scrape_interval: 10s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'qubo-backend-1'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'qubo-platform'
+
+  # QPU Metrics
+  - job_name: 'qpu-metrics'
+    static_configs:
+      - targets: ['qubo-backend:8000']
+    metrics_path: '/api/v1/qpu/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'qpu-backend-1'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'qpu-service'
+
+  # Cloud Execution Metrics
+  - job_name: 'cloud-metrics'
+    static_configs:
+      - targets: ['qubo-backend:8000']
+    metrics_path: '/api/v1/cloud/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'cloud-backend-1'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'cloud-service'
+
+  # Replay Metrics
+  - job_name: 'replay-metrics'
+    static_configs:
+      - targets: ['qubo-backend:8000']
+    metrics_path: '/api/v1/replay/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'replay-backend-1'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'replay-service'
+
+  # User Analytics Metrics
+  - job_name: 'user-analytics'
+    static_configs:
+      - targets: ['qubo-backend:8000']
+    metrics_path: '/api/v1/analytics/metrics'
+    scrape_interval: 60s
+    scrape_timeout: 5s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: 'analytics-backend-1'
+      - source_labels: [__address__]
+        target_label: service
+        replacement: 'analytics-service'
+
+# Alerting Configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Remote Write Configuration (for long-term storage)
+remote_write:
+  - url: "http://prometheus-remote-storage:9201/api/v1/write"
+    queue_config:
+      max_samples_per_send: 1000
+      max_shards: 200
+      capacity: 2500
+    write_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'go_.*|process_.*|prometheus_.*'
+        action: drop
+
+# Storage Configuration
+storage:
+  tsdb:
+    retention.time: 30d
+    retention.size: 10GB
+    wal:
+      compression: true
+      max_segment_size: 128MB
+
+# Query Configuration
+query:
+  max_concurrent: 20
+  timeout: 2m
+  lookback-delta: 5m
