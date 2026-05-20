@@ -7,6 +7,11 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        display: ["Space Grotesk", "Inter", "system-ui", "sans-serif"],
+        sans: ["Inter", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+      },
       colors: {
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
@@ -41,6 +46,10 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        quantum: "var(--quantum)",
+        "quantum-glow": "var(--quantum-glow)",
+        electric: "var(--electric)",
+        aurora: "var(--aurora)",
       },
       borderRadius: {
         lg: "var(--radius)",
