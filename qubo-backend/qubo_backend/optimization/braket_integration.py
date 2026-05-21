@@ -53,12 +53,12 @@ def _safe_float(v, default=0.0):
 
 # ── Deterministic shot table (v4 — statistical stability) ───────────
 _BENCHMARK_SHOT_TABLE = {
-    "FAST": 256,
-    "benchmark_fast": 256,
-    "BALANCED": 512,
-    "benchmark_balanced": 512,
-    "RESEARCH": 1024,
-    "benchmark_accuracy": 1024,
+    "FAST": {"optimization": 64, "validation": 512},
+    "benchmark_fast": {"optimization": 64, "validation": 512},
+    "BALANCED": {"optimization": 128, "validation": 1024},
+    "benchmark_balanced": {"optimization": 128, "validation": 1024},
+    "RESEARCH": {"optimization": 256, "validation": 2048},
+    "benchmark_accuracy": {"optimization": 256, "validation": 2048},
 }
 
 # ── Feasibility certification thresholds (Priority 2) ──────────────
@@ -781,7 +781,8 @@ class IntegratedBraketSolver(BasePortfolioSolver):
             # ── Deterministic shot lock ─────────────────────────────
             bench_mode = getattr(request, "benchmark_mode", None)
             if bench_mode is not None and bench_mode in _BENCHMARK_SHOT_TABLE:
-                shots = _BENCHMARK_SHOT_TABLE[bench_mode]
+                shot_config = _BENCHMARK_SHOT_TABLE[bench_mode]
+                shots = shot_config["validation"] if isinstance(shot_config, dict) else shot_config
                 self.logger.info(f"[DETERMINISTIC_SHOT_LOCK] mode={bench_mode} shots={shots} adaptive_shots=DISABLED")
                 print(f"[DETERMINISTIC_SHOT_LOCK] mode={bench_mode} shots={shots} adaptive_shots=DISABLED")
             elif bench_mode is not None:
@@ -956,11 +957,11 @@ class IntegratedBraketSolver(BasePortfolioSolver):
 
             # ── [QAOA_DEPTH_ADAPTATION] (Fix 1, 7) ───────────────────
             depth_map = {
-                "FAST": 2, "benchmark_fast": 2,
-                "BALANCED": 3, "benchmark_balanced": 3,
-                "RESEARCH": 4, "benchmark_accuracy": 4
+                "FAST": 1, "benchmark_fast": 1,
+                "BALANCED": 2, "benchmark_balanced": 2,
+                "RESEARCH": 3, "benchmark_accuracy": 3
             }
-            qaoa_depth = depth_map.get(bench_mode, 2)
+            qaoa_depth = depth_map.get(bench_mode, 1)
             
             # TN1 Complexity adaptation
             if device == "tn1":
@@ -1214,6 +1215,13 @@ class IntegratedBraketSolver(BasePortfolioSolver):
 
             if feasibility_report.best_feasible_weights is not None:
                 weights = feasibility_report.best_feasible_weights
+                
+                # ── [HARD_PROJECTOR] (Phase 4) ─────────────────────────
+                from .feasibility_projector import hard_cardinality_projector
+                weights, was_projected = hard_cardinality_projector(weights, request.cardinality, request.tickers)
+                if was_projected:
+                    self.logger.info("[HARD_PROJECTOR_APPLIED] Enforced strict cardinality post-decode.")
+                
                 best_sample = feasibility_report.best_feasible_sample
                 native_feasible = True
                 optimization_status = "decoded"

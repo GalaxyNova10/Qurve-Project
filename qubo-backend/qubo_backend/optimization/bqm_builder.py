@@ -195,37 +195,40 @@ def build_portfolio_bqm(request: SolverRequest) -> BQMBuildResult:
     # Recalculate span for penalty scaling after normalization (Fix 2)
     objective_span = compute_objective_span(bqm)
     
-    # ── [ADAPTIVE_PENALTY_COMPRESSION] (Scientific Repair) ──────────
-    # Target: penalty/objective ratio between 3x and 50x.
-    # Previous ratios exceeded 7000x causing QAOA phase collapse.
-    #
-    # Scientific basis: The cardinality penalty P_card*(sum(y_i)-K)^2
-    # creates a linear bias of P_card*(1-2K) on each y_i. For K=2 this
-    # is -3*P_card, strongly rewarding over-selection. The linkage
-    # penalty must counteract this bias.
-    #
-    # Required: P_linkage >= P_card * (2K - 1) * safety_margin
-    # With K=2: P_linkage >= 3 * P_card * 1.5 = 4.5 * P_card
+    # ── [ADAPTIVE_PENALTY_COMPRESSION] (Phase 3) ──────────
+    # Compute Q_max BEFORE normalization for true scale reference
+    all_obj_values = list(bqm.linear.values()) + list(bqm.quadratic.values())
+    Q_max = max((abs(v) for v in all_obj_values), default=1.0)
+    
+    # Adaptive scaling: α · max(|Q_ij|)
+    ALPHA_CARD = 10.0    # Cardinality dominance factor
+    ALPHA_BUDGET = 8.0   # Budget dominance factor  
+    ALPHA_SECTOR = 5.0   # Sector dominance factor
+    ALPHA_LINKAGE_SAFETY = 2.5  # Linkage safety margin over cardinality bias
+    
+    P_card = ALPHA_CARD * Q_max
+    P_budget = ALPHA_BUDGET * Q_max
+    P_sector = ALPHA_SECTOR * Q_max
     
     K = float(request.cardinality)
-    
-    # Cardinality penalty: 8x objective span
-    P_card = objective_span * 8.0
     
     # Linkage penalty: must counteract cardinality linear bias
     # P_card * (2K - 1) is the max reward from toggling y_i
     # We need P_linkage > this to prevent over-selection
     card_linear_bias = P_card * abs(1.0 - 2.0 * K)
-    P_linkage = card_linear_bias * 2.0  # 2x safety margin
-    
-    # Budget penalty: 6x objective span
-    P_budget = objective_span * 6.0
-    
-    # Sector penalty: 4x objective span
-    P_sector = objective_span * 4.0
+    P_linkage = card_linear_bias * ALPHA_LINKAGE_SAFETY
     
     # OR gate coupling: half of linkage
     P_gate = P_linkage * 0.5
+    
+    logger.info(
+        f"[ADAPTIVE_PENALTY_SCALING] "
+        f"Q_max={Q_max:.4f} "
+        f"P_card={P_card:.4f} "
+        f"P_budget={P_budget:.4f} "
+        f"P_sector={P_sector:.4f} "
+        f"P_linkage={P_linkage:.4f}"
+    )
 
     # PHASE 4: SPECIAL CASE FIX (K == N) (Fix 4)
     is_kn_case = (request.cardinality == n_assets)

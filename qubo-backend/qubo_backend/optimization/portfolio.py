@@ -237,6 +237,92 @@ def _repair_budget(weights: np.ndarray, selected: list[int], sectors: list[str],
     return weights
 
 
+def _repair_sector_violations(
+    weights: np.ndarray,
+    selected: list[int],
+    sectors: list[str],
+    sector_cap: float,
+    max_rounds: int = 20,
+) -> np.ndarray:
+    """Minimally perturb weights to satisfy sector constraints.
+
+    Strategy:
+    1. Identify violating sectors
+    2. Reduce weights in violating sectors proportionally
+    3. Redistribute excess to non-violating sectors (by weight priority)
+    4. Normalize to sum=1.0
+    5. Preserve selected assets and objective structure
+
+    Returns repaired weights with sector exposure <= sector_cap + tolerance.
+    """
+    weights = weights.copy().astype(float)
+    tolerance = 1e-6
+
+    for round_idx in range(max_rounds):
+        allocations = sector_allocation(weights, sectors)
+        violating = {
+            s: exp for s, exp in allocations.items()
+            if exp > sector_cap + tolerance
+        }
+        if not violating:
+            break
+
+        # Collect excess from violating sectors
+        total_excess = 0.0
+        reduction_plan: list[tuple[int, float]] = []
+
+        for idx in selected:
+            sector = sectors[idx]
+            if sector in violating:
+                # Calculate how much this asset should be reduced
+                sector_total = allocations[sector]
+                sector_excess = sector_total - sector_cap
+                # Proportional reduction: each asset contributes proportionally
+                if sector_total > 0:
+                    share = weights[idx] / sector_total
+                    reduction = share * sector_excess
+                    if reduction > 0:
+                        reduction_plan.append((idx, reduction))
+                        total_excess += reduction
+
+        # Apply reductions
+        for idx, reduction in reduction_plan:
+            weights[idx] = max(0.0, weights[idx] - reduction)
+
+        # Redistribute excess to non-violating sectors
+        if total_excess > 0:
+            non_violating = [
+                idx for idx in selected
+                if sectors[idx] not in violating and weights[idx] > 0
+            ]
+            if non_violating:
+                # Distribute proportionally to existing weights
+                total_non_violating = sum(weights[idx] for idx in non_violating)
+                if total_non_violating > 0:
+                    for idx in non_violating:
+                        share = weights[idx] / total_non_violating
+                        addition = share * total_excess
+                        # Check sector room before adding
+                        sector = sectors[idx]
+                        current_sector_exp = sum(
+                            weights[i] for i in selected if sectors[i] == sector
+                        )
+                        room = sector_cap - current_sector_exp
+                        weights[idx] += min(addition, max(0.0, room))
+
+        # Normalize to sum=1.0
+        total = float(np.sum(weights))
+        if total > 0 and abs(total - 1.0) > 1e-10:
+            weights /= total
+
+    # Final normalization
+    total = float(np.sum(weights))
+    if total > 0:
+        weights /= total
+
+    return weights
+
+
 def bqm_energy(build: BQMBuildResult, sample: dict[str, int]) -> float:
     energy = build.bqm.offset
     for var, bias in build.bqm.linear.items():

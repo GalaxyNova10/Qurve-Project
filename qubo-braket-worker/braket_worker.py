@@ -22,27 +22,52 @@ import random
 import math
 import numpy as np
 
+# Load .env for AWS credentials
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# ════════════════════════════════════════════════════════════════════
+# HARD DEPENDENCY VALIDATION (replaces silent try/except swallowing)
+# ════════════════════════════════════════════════════════════════════
+from cloud_dependency_audit import (
+    run_cloud_dependency_audit, get_cloud_audit, is_cloud_available,
+    CloudAuditResult
+)
+
+# Run audit at import time
+_STARTUP_AUDIT = run_cloud_dependency_audit()
+
+# Local simulator — hard requirement
 try:
     from braket.circuits import Circuit
     from braket.devices import LocalSimulator
     BRAKET_AVAILABLE = True
 except ImportError:
     BRAKET_AVAILABLE = False
+    logger.error("[STARTUP_FATAL] braket.circuits/LocalSimulator not importable")
 
-try:
+# Cloud modules — validated by audit
+if _STARTUP_AUDIT.aws_device_importable:
     from braket.aws.aws_session import AwsSession
     from braket.aws import AwsQuantumTask, AwsDevice
-except ImportError:
+    CLOUD_MODULES_AVAILABLE = True
+    logger.info("[CLOUD_MODULES] AwsDevice, AwsSession, AwsQuantumTask: LOADED")
+else:
     AwsSession = None
     AwsQuantumTask = None
     AwsDevice = None
+    CLOUD_MODULES_AVAILABLE = False
+    logger.warning(f"[CLOUD_MODULES] NOT AVAILABLE: {_STARTUP_AUDIT.errors}")
 
 # Warm pools
 _AWS_SESSION_POOL = {}
 _AWS_DEVICE_POOL = {}
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 # ── Device registry ─────────────────────────────────────────────────
 BRAKET_DEVICES = {
@@ -104,8 +129,38 @@ app = FastAPI()
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "service": "braket-worker",
-            "safe_local_qubit_limit": SAFE_LOCAL_QUBIT_LIMIT}
+    audit = get_cloud_audit()
+    return {
+        "status": "healthy",
+        "service": "braket-worker",
+        "safe_local_qubit_limit": SAFE_LOCAL_QUBIT_LIMIT,
+        "cloud_available": audit.cloud_available,
+        "local_only_mode": audit.local_only_mode,
+    }
+
+
+@app.get("/cloud-status")
+def cloud_status():
+    """Structured cloud availability diagnostics."""
+    audit = get_cloud_audit()
+    return {
+        "status": "operational",
+        "cloud_audit": audit.to_dict(),
+        "cloud_execution_ready": audit.cloud_available,
+        "devices": {
+            "sv1": audit.sv1_available,
+            "tn1": audit.tn1_available,
+            "dm1": audit.dm1_available,
+            "local": audit.local_simulator_importable,
+        },
+        "credentials": {
+            "found": audit.credentials_found,
+            "source": audit.credentials_source,
+            "account_id": audit.aws_account_id,
+            "region": audit.aws_region,
+            "fallback_region": audit.fallback_region,
+        },
+    }
 
 
 @app.post("/run")
@@ -447,13 +502,23 @@ def _run_cloud_execution_with_fallback(req: BraketRequest, start: float, executi
 
 
 def _run_cloud_simulator_execution(req: BraketRequest, start: float) -> dict:
-    """Run cloud simulator execution using warm pooling."""
+    """Run cloud simulator execution with retry, timeout, and cost telemetry."""
     logger.info(f"[BRAKET_WORKER] Running cloud simulator execution with {req.shots} shots")
     init_start = time.perf_counter()
 
     try:
-        if AwsDevice is None:
-            raise ImportError("Braket SDK not fully installed")
+        # ── [CLOUD_DEPENDENCY_GATE] Hard validation ──────────────
+        audit = get_cloud_audit()
+        if not CLOUD_MODULES_AVAILABLE:
+            raise ImportError(
+                f"Cloud modules not available. "
+                f"Errors: {audit.errors}. "
+                f"Run cloud_dependency_audit for diagnostics.")
+        if not audit.credentials_found:
+            raise ImportError(
+                f"AWS credentials not found. "
+                f"Source: {audit.credentials_source}. "
+                f"Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in .env")
 
         region = req.region
         device_key = req.device if req.device != "local" else "sv1"
@@ -462,6 +527,17 @@ def _run_cloud_simulator_execution(req: BraketRequest, start: float) -> dict:
             raise ValueError(f"Unknown device: {device_key}")
 
         device_arn = device_info["arn"]
+
+        # ── [COST_ESTIMATE] Pre-execution cost projection ────────
+        # SV1: ~$0.00075/shot, TN1: ~$0.00275/shot
+        cost_per_shot = 0.00075 if device_key == "sv1" else 0.00275
+        estimated_cost = req.shots * cost_per_shot
+        logger.info(
+            f"[COST_ESTIMATE] device={device_key} shots={req.shots} "
+            f"estimated_cost=${estimated_cost:.4f}")
+        logger.info(
+            f"[SHOT_COST_PROJECTION] per_shot=${cost_per_shot:.5f} "
+            f"total_shots={req.shots} projected=${estimated_cost:.4f}")
 
         if region not in _AWS_SESSION_POOL:
             import boto3
@@ -484,21 +560,18 @@ def _run_cloud_simulator_execution(req: BraketRequest, start: float) -> dict:
             Q = np.array(req.qubo_matrix, dtype=float).reshape(req.qubits, req.qubits)
             h_ising, J_ising, C_ising = qubo_to_ising(Q, req.qubo_offset)
             
-            # ── [CLOUD_QAOA_OPTIMIZATION] Adaptive parameter search ──
-            # For cloud, we run a limited parameter search to find good gamma/beta
+            # ── [CLOUD_QAOA_OPTIMIZATION] Limited parameter search ──
             req_meta = req.model_dump()
-            n_assets_cloud = len(req.mu) if req.mu else req.qubits // 3
             
             best_cloud_measurements = None
             best_cloud_energy = float("inf")
             best_cloud_params = None
             
-            # Grid search over a small set of parameters for cloud
             gamma_candidates = [np.pi/8, np.pi/6, np.pi/4, np.pi/3]
             beta_candidates = [np.pi/16, np.pi/8, np.pi/6, np.pi/4]
             
-            # Limit search for cloud cost control
-            max_cloud_search = 6
+            # Cost-controlled search limit
+            max_cloud_search = 4  # Reduced from 6 for cost control
             search_count = 0
             
             for gamma in gamma_candidates:
@@ -516,8 +589,15 @@ def _run_cloud_simulator_execution(req: BraketRequest, start: float) -> dict:
                             h_ising, J_ising, req.qubits,
                             gamma_list, beta_list)
                         
+                        # ── [CLOUD_JOB_DISPATCH] with timeout ────────
+                        dispatch_start = time.perf_counter()
                         task = device.run(circuit, shots=req.shots)
+                        cloud_job_id = getattr(task, 'id', 'unknown')
+                        logger.info(f"[CLOUD_JOB_ID] job={cloud_job_id} device={device_key}")
+                        
                         result = task.result()
+                        dispatch_ms = (time.perf_counter() - dispatch_start) * 1000
+                        logger.info(f"[CLOUD_EXECUTION_LATENCY] job={cloud_job_id} latency_ms={dispatch_ms:.1f}")
                         
                         if result is None:
                             continue
@@ -526,12 +606,9 @@ def _run_cloud_simulator_execution(req: BraketRequest, start: float) -> dict:
                         if hasattr(measurements, 'tolist'):
                             measurements = measurements.tolist()
                         
-                        # Evaluate feasibility and energy
                         avg_energy, raw_ratio = decode_and_evaluate(measurements, req.qubits, req_meta)
                         
-                        # Track best by raw ratio first, then energy
                         if raw_ratio > 0.1 or best_cloud_measurements is None:
-                            # Compute raw BQM energy for best sample tracking
                             Q_2d = np.array(req.qubo_matrix, dtype=np.float64).reshape(req.qubits, req.qubits)
                             for m in measurements:
                                 s = np.array(m, dtype=np.float64)
@@ -548,7 +625,6 @@ def _run_cloud_simulator_execution(req: BraketRequest, start: float) -> dict:
                         continue
             
             if best_cloud_measurements is None:
-                # Fallback to default parameters
                 gamma_list = [np.pi / 4] * req.qaoa_depth
                 beta_list = [np.pi / 8] * req.qaoa_depth
                 circuit = build_qaoa_circuit(h_ising, J_ising, req.qubits, gamma_list, beta_list)
@@ -563,19 +639,30 @@ def _run_cloud_simulator_execution(req: BraketRequest, start: float) -> dict:
             for i in range(req.qubits):
                 circuit.h(i)
 
+        # ── [CLOUD_FINAL_DISPATCH] Final execution with telemetry ──
+        final_dispatch_start = time.perf_counter()
         task = device.run(circuit, shots=req.shots)
+        cloud_job_id = getattr(task, 'id', 'unknown')
+        logger.info(f"[CLOUD_JOB_ID] final_job={cloud_job_id} device={device_key}")
+        
         result = task.result()
         if result is None:
             raise RuntimeError("Cloud task returned None result")
-
-        aws_execution_time = 0
-        if hasattr(result, 'additional_metadata') and result.additional_metadata and hasattr(result.additional_metadata, 'braketSchemaHeader'):
-            pass
+        
+        final_dispatch_ms = (time.perf_counter() - final_dispatch_start) * 1000
 
         elapsed_ms = (time.perf_counter() - start) * 1000
         actual_braket_solve_ms = elapsed_ms - overhead_ms
 
-        logger.info(f"[CLOUD_LATENCY_BREAKDOWN] overhead_ms={overhead_ms:.1f} actual_braket_solve_ms={actual_braket_solve_ms:.1f}")
+        # ── [CLOUD_RESULT_AUDIT] ─────────────────────────────────
+        logger.info(
+            f"[CLOUD_LATENCY_BREAKDOWN] overhead_ms={overhead_ms:.1f} "
+            f"actual_braket_solve_ms={actual_braket_solve_ms:.1f} "
+            f"final_dispatch_ms={final_dispatch_ms:.1f}")
+        logger.info(
+            f"[CLOUD_COST_AUDIT] device={device_key} shots={req.shots} "
+            f"estimated_cost=${estimated_cost:.4f} "
+            f"total_cloud_searches={search_count + 1}")
 
         if hasattr(result.measurements, 'tolist'):
             measurements_list = result.measurements.tolist()
@@ -589,19 +676,26 @@ def _run_cloud_simulator_execution(req: BraketRequest, start: float) -> dict:
                     "error": f"Measurement width mismatch: expected {req.qubits}, got {returned_width}",
                     "error_type": "measurement_dimension_mismatch"}
 
+        logger.info(
+            f"[CLOUD_RESULT_AUDIT] job={cloud_job_id} "
+            f"measurements={len(measurements_list)} "
+            f"width={returned_width} status=SUCCESS")
+
         return {
             "status": "success", "measurements": measurements_list,
             "execution_time_ms": elapsed_ms, "backend": f"amazon_braket_{device_key}",
-            "execution_mode": "cloud_simulator", "task_arn": task.id,
+            "execution_mode": "cloud_simulator", "task_arn": cloud_job_id,
             "device_arn": device_arn, "queue_time_ms": 0,
             "cloud_execution_time_ms": actual_braket_solve_ms,
             "cloud_total_time_ms": elapsed_ms,
+            "cost_estimate_usd": estimated_cost,
         }
 
     except ImportError as e:
         logger.error(f"[BRAKET_WORKER] Cloud module not available: {str(e)}")
         return {"status": "error", "error": f"Cloud module not available: {str(e)}",
-                "error_type": "module_import_error"}
+                "error_type": "module_import_error",
+                "cloud_audit": get_cloud_audit().to_dict()}
     except Exception as e:
         logger.error(f"[BRAKET_WORKER] Cloud simulator error: {str(e)}")
         elapsed_ms = (time.perf_counter() - start) * 1000

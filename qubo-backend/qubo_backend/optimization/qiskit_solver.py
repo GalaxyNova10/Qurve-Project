@@ -83,9 +83,30 @@ class QiskitSolver(BasePortfolioSolver):
             optimizer = MinimumEigenOptimizer(minimum_eigensolver)
             result = optimizer.solve(converted)
             
-            # Create explicit mapping from variable names to integer indices
-            var_map = {name: i for i, name in enumerate(model.variable_order)}
-            sample = {var_map.get(name, 0): int(round(float(value))) for name, value in zip(model.variable_order, result.x)}
+            # Create explicit mapping from variable names to bit values
+            # CRITICAL: decode_sample_to_weights expects STRING keys (variable names), not integer indices
+            sample = {name: int(round(float(value))) for name, value in zip(model.variable_order, result.x)}
+            
+            # [QAOA_BITSTRING_FORENSICS] Validate sample before decoding
+            total_bits = sum(sample.values())
+            nonzero_vars = sum(1 for v in sample.values() if v > 0)
+            logger.info(
+                f"[QAOA_BITSTRING_FORENSICS] total_bits={total_bits} nonzero_vars={nonzero_vars} "
+                f"sample_size={len(sample)} expected_vars={len(model.variable_order)}"
+            )
+            
+            # [QAOA_VARIABLE_MAP_AUDIT] Verify variable name alignment
+            expected_var_names = set(model.variable_order)
+            sample_var_names = set(sample.keys())
+            if expected_var_names != sample_var_names:
+                missing = expected_var_names - sample_var_names
+                extra = sample_var_names - expected_var_names
+                logger.warning(
+                    f"[QAOA_VARIABLE_MAP_AUDIT] mismatch: missing={missing} extra={extra}"
+                )
+            else:
+                logger.info(f"[QAOA_VARIABLE_MAP_AUDIT] variable names aligned correctly")
+            
             metadata = {
                 "solver": "qiskit_qaoa",
                 "provider": "ibm-qiskit",

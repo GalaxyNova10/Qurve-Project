@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from qubo_backend.config import get_settings
@@ -12,6 +13,17 @@ import auth
 logging.basicConfig(level=logging.INFO)
 
 settings = get_settings()
+
+# Bootstrap: ensure required directories and data files exist
+try:
+    from bootstrap import bootstrap
+    bootstrap_result = bootstrap(base_dir=Path(__file__).resolve().parent.parent, force=False)
+    logging.info("Bootstrap completed: alpha_data=%s valid=%s", 
+                 bootstrap_result.get("alpha_data_path"), 
+                 bootstrap_result.get("alpha_data_valid"))
+except Exception as e:
+    logging.error("Bootstrap failed, server will start but benchmark may fail: %s", e)
+
 artifacts = ArtifactStore(settings.output_dir)
 job_store = JobStore(settings.jobs_dir)
 

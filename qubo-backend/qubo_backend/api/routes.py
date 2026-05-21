@@ -266,19 +266,7 @@ def create_api_router(settings: Settings, artifacts: ArtifactStore, job_store: J
             # [BENCHMARK_MODE_PROPAGATION]
             logger.info("[BENCHMARK_MODE_PROPAGATION] api_layer mode=%s", params.benchmark_mode)
             
-            # Check if alpha data exists before trying to load
-            alpha_data_path = settings.output_dir / "alpha_data.npz"
-            if not alpha_data_path.exists():
-                logger.error("[BENCHMARK_ERROR] Alpha data file missing: %s", alpha_data_path)
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "error": "Alpha data not found",
-                        "message": f"Required alpha data file missing: {alpha_data_path}",
-                        "type": "FileNotFoundError"
-                    }
-                )
-            
+            # Load alpha data (auto-generates if missing)
             alpha = load_alpha_data(settings.output_dir)
             logger.debug("[BENCHMARK_DEBUG] Alpha data loaded successfully")
             
@@ -316,18 +304,18 @@ def create_api_router(settings: Settings, artifacts: ArtifactStore, job_store: J
                     "type": "ValueError"
                 }
             )
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error("[BENCHMARK_ERROR] Benchmark endpoint failed: %s", str(e))
             logger.error("[BENCHMARK_TRACEBACK] %s", traceback.format_exc())
             
-            # Return proper error response instead of 500
             raise HTTPException(
                 status_code=500,
                 detail={
                     "error": "Benchmark execution failed",
-                    "message": str(e),
+                    "message": "An internal error occurred during benchmark execution",
                     "type": type(e).__name__,
-                    "traceback": traceback.format_exc()
                 }
             )
 
@@ -478,6 +466,8 @@ def run_optimization_job(settings: Settings, artifacts: ArtifactStore, job_store
         # Update global latest safely
         artifacts.write_json("optimal_weights.json", result, safe=True)
         job_store.update(task_id, status="complete", progress=100.0, step="Done", result=result, error=None)
+    except FileNotFoundError as e:
+        job_store.update(task_id, status="failed", progress=100.0, step="Failed", error=f"Alpha data missing: {e}")
     except Exception as exc:
         job_store.update(task_id, status="failed", progress=100.0, step="Failed", error=str(exc))
 

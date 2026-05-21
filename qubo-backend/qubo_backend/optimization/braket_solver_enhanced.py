@@ -27,9 +27,12 @@ logger = logging.getLogger(__name__)
 
 # ── Deterministic shot table (v4 — increased for statistical stability) ─
 _BENCHMARK_SHOT_TABLE = {
-    "FAST": 128, "benchmark_fast": 128,
-    "BALANCED": 256, "benchmark_balanced": 256,
-    "RESEARCH": 512, "benchmark_accuracy": 512,
+    "FAST": {"optimization": 64, "validation": 512},
+    "benchmark_fast": {"optimization": 64, "validation": 512},
+    "BALANCED": {"optimization": 128, "validation": 1024},
+    "benchmark_balanced": {"optimization": 128, "validation": 1024},
+    "RESEARCH": {"optimization": 256, "validation": 2048},
+    "benchmark_accuracy": {"optimization": 256, "validation": 2048},
 }
 
 
@@ -138,7 +141,8 @@ class EnhancedBraketSolver(BasePortfolioSolver):
     def _calculate_adaptive_shots(self, n_qubits: int, mode: Optional[str] = None) -> int:
         """Deterministic in benchmark mode; adaptive otherwise."""
         if mode is not None and mode in _BENCHMARK_SHOT_TABLE:
-            shots = _BENCHMARK_SHOT_TABLE[mode]
+            shot_config = _BENCHMARK_SHOT_TABLE[mode]
+            shots = shot_config["validation"] if isinstance(shot_config, dict) else shot_config
             self.logger.info(
                 f"[DETERMINISTIC_SHOT_LOCK] mode={mode} shots={shots} "
                 f"adaptive_shots=DISABLED min_shots=IGNORED max_shots=IGNORED")
