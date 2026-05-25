@@ -60,8 +60,8 @@ class SolverRouter:
             if request.solver in ("dwave", "dwave_hybrid", "dwave_qpu", "dwave_local", "hybrid"):
                 return self._solve_hybrid_cascade(request, N)
 
-            if request.solver in ("braket", "braket_local", "AWS_BRAKET_TN1", "AWS_BRAKET_SV1", "AWS_BRAKET_DM1", "AWS_BRAKET_LOCAL", "AWS_BRAKET_CLOUD"):
-                mode = "cloud_simulator" if request.solver in ("AWS_BRAKET_TN1", "AWS_BRAKET_SV1", "AWS_BRAKET_DM1", "AWS_BRAKET_CLOUD") else "local"
+            if request.solver in ("braket", "braket_local", "AWS_BRAKET_SV1", "AWS_BRAKET_DM1", "AWS_BRAKET_LOCAL", "AWS_BRAKET_CLOUD"):
+                mode = "cloud_simulator" if request.solver in ("AWS_BRAKET_SV1", "AWS_BRAKET_DM1", "AWS_BRAKET_CLOUD") else "local"
                 logger.info(f"[BRAKET_ROUTING_CONVERGENCE] solver={request.solver} execution_mode={mode}")
                 print(f"[BRAKET_ROUTING_CONVERGENCE] solver={request.solver} execution_mode={mode}")
                 return self._solve_braket(request)
@@ -100,6 +100,7 @@ class SolverRouter:
                 from qubo_backend.optimization.portfolio import PortfolioSolution, SolverRunMetadata
                 import numpy as np
                 n_assets = len(request.mu)
+                
                 return PortfolioSolution(
                     weights=np.zeros(n_assets, dtype=float),
                     energy=None,

@@ -107,6 +107,31 @@ def _verify_energy_convention() -> None:
         )
 
 
+def qubo_to_ising(Q: np.ndarray, offset: float = 0.0) -> tuple[np.ndarray, np.ndarray, float]:
+    """[PHASE 6 & 11: CANONICAL HAMILTONIAN SERIALIZATION]
+    Convert upper-triangular QUBO matrix to Ising Hamiltonian.
+    QUBO:  E(x) = x^T Q x + offset,  x in {0,1}^n
+    Ising: H = sum_i h_i Z_i + sum_{i<j} J_ij Z_i Z_j + C
+    Returns (h, J, C) where h is linear, J is upper-triangular quadratic, C is constant.
+    """
+    n = Q.shape[0]
+    h = np.zeros(n)
+    J = np.zeros((n, n))
+    C = float(offset)
+
+    for i in range(n):
+        C += Q[i, i] / 2.0
+        h[i] -= Q[i, i] / 2.0
+
+        for j in range(i + 1, n):
+            C += Q[i, j] / 4.0
+            h[i] -= Q[i, j] / 4.0
+            h[j] -= Q[i, j] / 4.0
+            J[i, j] = Q[i, j] / 4.0
+
+    return h, J, C
+
+
 def to_qubo_matrix(model: QuboModel) -> tuple[np.ndarray, list[str], float]:
     """Return upper-triangular QUBO matrix Q where E=x'Qx+offset."""
     import logging as _logging
@@ -137,6 +162,10 @@ def to_qubo_matrix(model: QuboModel) -> tuple[np.ndarray, list[str], float]:
     return q, order, float(model.build.bqm.offset)
 
 
+class AllocationLeakageError(Exception):
+    """Raised when classical normalization mutates the quantum selection topology."""
+    pass
+
 def decode_sample_to_weights(model: QuboModel, sample: dict[str, int | float | bool]) -> np.ndarray:
     """Decodes a binary sample bitstring into normalized portfolio weights.
     
@@ -147,136 +176,115 @@ def decode_sample_to_weights(model: QuboModel, sample: dict[str, int | float | b
     n_assets = len(model.request.mu)
     ALLOCATION_EPSILON = 1e-6
     
-    # Priority 4: STEP 1 - Decode raw weights with MIN_WEIGHT_FLOOR (Phase 6)
+    is_kn = (model.request.cardinality == n_assets)
+    y_bits = np.array([int(round(float(sample.get(model.build.indicator_variables[i], 1 if is_kn else 0)))) for i in range(n_assets)])
+    selection_mask = y_bits.astype(bool)
     raw_weights = np.zeros(n_assets, dtype=float)
-    floor_applied_count = 0
-    is_kn = (model.request.cardinality == n_assets)
-    
-    for i, row in enumerate(model.build.weight_variables):
-        units = 0
-        for bit, var in enumerate(row):
-            bit_val = int(round(float(sample.get(var, 0))))
-            units += bit_val * (2**bit)
-            
-        # [MIN_WEIGHT_FLOOR] (Phase 6)
-        y_var = model.build.indicator_variables[i]
-        indicator_val = int(round(float(sample.get(y_var, 1 if is_kn else 0))))
-        
-        if indicator_val == 1 and units == 0:
-            units = 1 # Force minimal allocation
-            floor_applied_count += 1
-            
-        raw_weights[i] = units / model.build.denominator
 
-    pre_norm_weights = raw_weights.copy()
-
-    # Priority 4: STEP 2 - Normalize and audit stability
-    weight_sum = np.sum(raw_weights)
-    if weight_sum > 1e-9:
-        normalized_weights = raw_weights / weight_sum
+    # ── [TN1 BINARY SELECTION SWITCH] ─────────────
+    if len(model.build.weight_variables) == 0:
+        # Combinatorial Only (TN1). Classical convex optimization (scipy.optimize)
+        from scipy.optimize import minimize
+        selected_indices = np.where(selection_mask)[0].tolist()
+                
+        if len(selected_indices) > 0:
+            mu = np.array(model.request.mu)
+            sigma = np.array(model.request.sigma)
+            lambda_r = model.request.risk_tolerance
+            
+            def objective(w_sel):
+                return w_sel.T @ sigma[np.ix_(selected_indices, selected_indices)] @ w_sel - lambda_r * (mu[selected_indices].T @ w_sel)
+                
+            constraints = [{'type': 'eq', 'fun': lambda w: np.sum(w) - 1.0}]
+            bounds = [(1e-5, 1.0) for _ in selected_indices]
+            initial_guess = np.ones(len(selected_indices)) / len(selected_indices)
+            
+            res = minimize(objective, initial_guess, method='SLSQP', bounds=bounds, constraints=constraints)
+            
+            if not res.success:
+                raise ValueError("INVALID_STATE: Classical convex optimization failed for selected subset.")
+                
+            for idx, w_val in zip(selected_indices, res.x):
+                raw_weights[idx] = max(1e-5, float(w_val))
     else:
-        normalized_weights = raw_weights
-        
-    # [NORMALIZATION_STABILITY_AUDIT] (Phase 6)
-    zeroed_allocations = 0
-    for i in range(n_assets):
-        if pre_norm_weights[i] > 0 and normalized_weights[i] <= ALLOCATION_EPSILON:
-            zeroed_allocations += 1
-            
-    if floor_applied_count > 0 or zeroed_allocations > 0:
+        for i, row in enumerate(model.build.weight_variables):
+            if selection_mask[i]:
+                units = sum(int(round(float(sample.get(var, 0)))) * (2**bit) for bit, var in enumerate(row))
+                raw_weights[i] = units / model.build.denominator
+
+    # STRICT INVARIANT-PRESERVING LOGIC (Phase 1/2)
+    # Step 1: Raw Weights
+    raw_sum = np.sum(raw_weights)
+    logger.info(
+        f"[ALLOCATION_DECODE_AUDIT] raw_bitstring_sample_keys={len(sample)} "
+        f"raw_selected_count={np.sum(selection_mask)} "
+        f"raw_allocation_sum={raw_sum:.6f}"
+    )
+
+    # Step 2: Hard Masking
+    weights = raw_weights.copy()
+    weights[~selection_mask] = 0.0
+    
+    # [TOPOLOGY_INVARIANT_AUDIT]
+    invariant_violations = np.sum((~selection_mask) & (raw_weights > 0.0))
+    if invariant_violations > 0:
+        logger.warning(
+            f"[TOPOLOGY_INVARIANT_AUDIT] Detected {invariant_violations} assets where y_i == 0 but w_i > 0! "
+            f"Hard masking applied to restore invariant."
+        )
+
+    # Step 3: Normalization
+    pre_norm_sum = np.sum(weights)
+    logger.info(
+        f"[NORMALIZATION_AUDIT] pre_normalization_sum={pre_norm_sum:.6f} "
+        f"zero_weight_assets={np.sum(weights <= 1e-8)}"
+    )
+    
+    if pre_norm_sum <= 1e-8:
+        raise AllocationLeakageError("No surviving selected weights after masking")
+
+    weights[selection_mask] /= pre_norm_sum
+    post_selection_count = np.count_nonzero(weights > 1e-8)
+    
+    logger.info(
+        f"[NORMALIZATION_AUDIT] post_normalization_sum={np.sum(weights):.6f} "
+        f"removed_allocations={np.sum(selection_mask) - post_selection_count}"
+    )
+
+    logger.info(
+        f"[FEASIBLE_MANIFOLD_AUDIT] raw_selection_count={np.sum(selection_mask)} "
+        f"post_selection_count={post_selection_count} "
+        f"selected_sum={pre_norm_sum:.4f}"
+    )
+    
+    logger.info("[TOPOLOGY_PRESERVATION_AUDIT] Topology strictly evaluated.")
+    logger.info("[POST_DECODE_INVARIANT] Verifying topological immutability.")
+
+    if post_selection_count != np.sum(selection_mask):
+        raise AllocationLeakageError(
+            f"Topology mutation detected "
+            f"before={np.sum(selection_mask)} "
+            f"after={post_selection_count}"
+        )
+
+    # ── [ALLOCATION VALIDATION TRACKING] (Phase 5) ───────────────
+    try:
+        from qubo_backend.optimization.portfolio import verify_constraints
+        validation = verify_constraints(weights, model.request)
         logger.info(
-            f"[NORMALIZATION_STABILITY_AUDIT] "
-            f"floor_applied={floor_applied_count} "
-            f"zeroed_allocations={zeroed_allocations} "
-            f"pre_sum={weight_sum:.4f}")
-
-    # [DECODE_FORENSICS] - Track decode → normalize pipeline geometry
-    pre_norm_sum = float(weight_sum)
-    post_norm_sum = float(np.sum(normalized_weights))
-    selected_count = int(np.sum(pre_norm_weights > ALLOCATION_EPSILON))
-    cardinality_target = model.request.cardinality
-    cardinality_match = (selected_count == cardinality_target)
-    denominator = model.build.denominator
-    
-    print(
-        f"[DECODE_FORENSICS] "
-        f"pre_sum={pre_norm_sum:.4f} "
-        f"post_sum={post_norm_sum:.4f} "
-        f"selected={selected_count} "
-        f"cardinality_target={cardinality_target} "
-        f"cardinality_match={cardinality_match} "
-        f"denominator={denominator} "
-        f"floor_applied={floor_applied_count} "
-        f"zeroed={zeroed_allocations}")
-
-    selection_mask = [w > ALLOCATION_EPSILON for w in normalized_weights]
-    nonzero_weight_count = sum(1 for s in selection_mask if s)
-    
-    return normalized_weights
-            
-    # Priority 4: STEP 3 - Cross-verify with indicator bits (Audit)
-    selected_bits_count = 0
-    zero_weight_selected_count = 0
-    is_kn = (model.request.cardinality == n_assets)
-    
-    for i in range(n_assets):
-        y_var = model.build.indicator_variables[i]
-        # For K==N, we assume 1 if missing. For others, 0.
-        bit_val = int(round(float(sample.get(y_var, 1 if is_kn else 0))))
-        if bit_val == 1:
-            selected_bits_count += 1
-            if raw_weights[i] <= ALLOCATION_EPSILON:
-                zero_weight_selected_count += 1
-
-    # [SELECTION_ALLOCATION_CONSISTENCY] (Phase 4)
-    consistent = (zero_weight_selected_count == 0)
-    status_str = "VALID" if consistent else "INCONSISTENT"
-    
-    logger.info(
-        f"[SELECTION_ALLOCATION_CONSISTENCY] "
-        f"selected_count={selected_bits_count} "
-        f"nonzero_weight_count={nonzero_weight_count} "
-        f"consistent={consistent} "
-        f"zero_weight_selected={zero_weight_selected_count} "
-        f"status={status_str}")
-    print(f"[SELECTION_ALLOCATION_CONSISTENCY] selected={selected_bits_count} nonzero={nonzero_weight_count} status={status_str}")
-
-    # Mandatory Hard Fail (Phase 4)
-    if not consistent:
-        logger.error(f"[MANIFOLD_CORRUPTION] {zero_weight_selected_count} assets have selection bits but zero weight.")
-        raise RuntimeError("SELECTION_ALLOCATION_MANIFOLD_CORRUPTION")
-
-    # Priority 5: [ENCODING_MANIFOLD_AUDIT]
-    target_cardinality = model.request.cardinality
-    selection_probability = nonzero_weight_count / n_assets
-    
-    logger.info(
-        f"[ENCODING_MANIFOLD_AUDIT] selection_probability={selection_probability:.4f} "
-        f"nonzero_weight_count={nonzero_weight_count} "
-        f"target_cardinality={target_cardinality}")
-
-    # [CARDINALITY_RECONCILIATION]
-    active_assets = nonzero_weight_count
-    cardinality_delta = abs(active_assets - target_cardinality)
-    
-    if active_assets == 0:
-        logger.error("[DECODE_COLLAPSE] Decoded portfolio has 0 active assets. Rejecting sample.")
-        raise DecodeConstraintError("Decoded portfolio collapsed to 0 active assets")
-        
-    # [PHASE 3: NORMALIZATION SAFETY]
-    w_sum = np.sum(raw_weights)
-    if w_sum <= ALLOCATION_EPSILON:
-        logger.error(f"[EMPTY_PORTFOLIO] sum(weights)={w_sum:.8f} below epsilon")
-        raise DecodeConstraintError("EMPTY_PORTFOLIO: near-zero total weight")
-
-    # Final Normalized Weights
-    weights = raw_weights / w_sum
-    
-    # Forensic Trace
-    for i in range(n_assets):
-        logger.info(f"[ASSET_DECODE_TRACE] asset={model.request.tickers[i]} weight={weights[i]:.4f} selected={selection_mask[i]}")
+            f"[ALLOCATION_VALIDATION_RESULT] "
+            f"feasible={validation.feasible} "
+            f"leakage_detected={validation.leakage_detected} "
+            f"normalization_valid={validation.normalization_valid} "
+            f"allocation_sum={validation.allocation_sum:.6f} "
+            f"selected_count={validation.selected_count} "
+            f"violations={len(validation.violations)}"
+        )
+    except Exception as e:
+        logger.error(f"[ALLOCATION_VALIDATION_ERROR] Failed to track validation result: {e}")
 
     return weights
+
 
 
 def to_qiskit_quadratic_program(model: QuboModel):

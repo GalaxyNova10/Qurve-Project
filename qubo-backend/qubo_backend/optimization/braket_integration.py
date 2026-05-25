@@ -23,6 +23,7 @@ from .braket_client_resilient import ResilientBraketClient, WorkerConfig, get_re
 from .solver_registry import get_solver_registry, SolverType
 from .base_solver import BasePortfolioSolver
 from .contracts import SolverRequest, SolverRunMetadata
+from .shot_governance import ShotPolicyManager
 from .portfolio import (
     PortfolioSolution, greedy_feasible_weights, verify_constraints,
     encode_weights, bqm_energy,
@@ -85,6 +86,9 @@ class FeasibilitySamplingReport:
         "exact_k_ratio", "strict_positive_allocation_ratio",
         "saturated_samples", "selection_entropy",
         "energy_inversion_detected",
+        "barren_plateau_risk", "parameter_concentration",
+        "sample_diversity", "effective_hilbert_exploration",
+        "bitstring_entropy",
     )
 
     def __init__(self):
@@ -101,12 +105,29 @@ class FeasibilitySamplingReport:
         self.sampling_collapsed: bool = True
         self.best_feasible_energy: float = float("inf")
         self.best_feasible_weights: Optional[np.ndarray] = None
-        self.best_feasible_sample: Optional[dict] = None
+        self.best_feasible_sample: Optional[Dict[str, int]] = None
+        self.best_raw_energy: float = float("inf")
+        self.best_raw_weights: Optional[np.ndarray] = None
+        self.best_raw_sample: Optional[Dict[str, int]] = None
         self.zero_weight_selections: int = 0
         self.exact_k_ratio: float = 0.0
         self.strict_positive_allocation_ratio: float = 0.0
         self.saturated_samples: int = 0
         self.selection_entropy: float = 0.0
+        self.energy_gap_ratio: float = 0.0
+        self.approximation_ratio: float = 0.0
+        
+        # Phase 12: Quantum Runtime Realism
+        self.barren_plateau_risk: float = 0.0
+        self.parameter_concentration: float = 0.0
+        self.sample_diversity: float = 0.0
+        self.effective_hilbert_exploration: float = 0.0
+        self.bitstring_entropy: float = 0.0
+        
+        # New Critical Refinement 1: Feasible Subspace Coverage
+        self.reachable_feasible_states: int = 0
+        self.manifold_exploration_rate: float = 0.0
+        self.feasible_sector_occupancy: float = 0.0
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -126,7 +147,17 @@ class FeasibilitySamplingReport:
             "strict_positive_allocation_ratio": round(self.strict_positive_allocation_ratio, 4),
             "exact_k_ratio": round(self.exact_k_ratio, 4),
             "zero_weight_selections": self.zero_weight_selections,
+            "energy_gap_ratio": round(self.energy_gap_ratio, 4),
+            "approximation_ratio": round(self.approximation_ratio, 4),
             "best_feasible_energy": round(self.best_feasible_energy, 4) if self.best_feasible_energy != float("inf") else None,
+            "barren_plateau_risk": round(self.barren_plateau_risk, 4),
+            "parameter_concentration": round(self.parameter_concentration, 4),
+            "sample_diversity": round(self.sample_diversity, 4),
+            "effective_hilbert_exploration": round(self.effective_hilbert_exploration, 4),
+            "bitstring_entropy": round(self.bitstring_entropy, 4),
+            "reachable_feasible_states": self.reachable_feasible_states,
+            "manifold_exploration_rate": round(self.manifold_exploration_rate, 4),
+            "feasible_sector_occupancy": round(self.feasible_sector_occupancy, 4),
         }
 
 
@@ -162,6 +193,9 @@ def _feasibility_filter(
     active_counts = []
     active_weight_counts = []
     cardinality_deltas = []
+    
+    # Priority 4: Feasible Subspace Coverage (Critical Refinement 1)
+    reachable_feasible_states_set = set()
 
     # ── [NULL_SAFETY] Derive penalty scales from model or defaults ──
     if scales is None:
@@ -306,12 +340,17 @@ def _feasibility_filter(
         zero_weight_selected = sum(1 for i, w in enumerate(weights) if selection_indicators[i] and w <= 1e-6)
         
         is_exact_k = (selected_count == request.cardinality)
+        
+        # ── [PHASE 4: STRICT MANIFOLD REJECTION] ──────────
+        if not is_exact_k:
+            logger.info(f"[STRICT_MANIFOLD_REJECTION] Rejecting sample: selected={selected_count} target={request.cardinality}")
+            continue
+            
         budget_ok = abs(float(np.sum(weights)) - 1.0) < 0.05
-        is_raw_feasible = is_exact_k and budget_ok
+        is_raw_feasible = budget_ok
 
         # Track cardinality successes for exact_k_ratio
-        if is_exact_k:
-            cardinality_successes += 1
+        cardinality_successes += 1
         
         # Topological Integrity Check
         topology_violations = 0
@@ -393,6 +432,9 @@ def _feasibility_filter(
         # 4. Success Tracking
         if is_raw_feasible:
             report.feasible_samples += 1
+            # Add the selection bitstring to the set of reachable feasible states
+            selection_bitstring = tuple(int(round(float(sample.get(f"y_{i}", 0)))) for i in range(n_assets))
+            reachable_feasible_states_set.add(selection_bitstring)
             
             # Best sample selection (uses amplified_energy)
             current_is_better = False
@@ -430,6 +472,12 @@ def _feasibility_filter(
                     f"feasible_bonus={feasible_bonus:.4f} "
                     f"infeasible_penalty={infeasible_penalty:.4f} "
                     f"normalization_adjustment={reward_corr_e:.4f}")
+                    
+        # Track global best raw energy
+        if amplified_energy < report.best_raw_energy:
+            report.best_raw_energy = amplified_energy
+            report.best_raw_weights = weights.copy()
+            report.best_raw_sample = sample
                 
         # Runtime Telemetry (5% sample)
         if report.total_samples == 1 or np.random.random() < 0.05:
@@ -456,6 +504,48 @@ def _feasibility_filter(
     report.feasible_ratio_raw = report.feasible_samples / total
     report.strict_positive_allocation_ratio = sum(1 for e in feasible_total_energies) / total
     report.exact_k_ratio = cardinality_successes / total
+    
+    # ── [CRITICAL REFINEMENT 1: FEASIBLE SUBSPACE COVERAGE] ────────────
+    import math
+    report.reachable_feasible_states = len(reachable_feasible_states_set)
+    # Total possible feasible states for cardinality K out of n_assets
+    try:
+        max_feasible_states = math.comb(n_assets, int(K))
+        if max_feasible_states > 0:
+            report.manifold_exploration_rate = report.reachable_feasible_states / max_feasible_states
+        else:
+            report.manifold_exploration_rate = 0.0
+    except Exception:
+        report.manifold_exploration_rate = 0.0
+    
+    if total > 0:
+        report.feasible_sector_occupancy = sum(1 for m in measurements if sum(m[:n_assets]) == int(K)) / total
+    
+    # ── [PHASE 12: QUANTUM RUNTIME REALISM METRICS] ────────────
+    # 1. Sample Diversity & Entropy
+    from collections import Counter
+    if total > 0:
+        counts = Counter(tuple(m) for m in measurements).values()
+        probs = [c / total for c in counts]
+        unique_count = len(probs)
+        report.sample_diversity = unique_count / total
+        report.parameter_concentration = max(probs) if probs else 0.0
+        report.bitstring_entropy = -sum(p * math.log2(p) for p in probs if p > 0)
+        max_hilbert = min(10000, 2**n_qubits)
+        report.effective_hilbert_exploration = unique_count / max_hilbert
+    
+    # 2. Barren Plateau Risk
+    if len(total_energies) > 1:
+        e_var = float(np.var(total_energies))
+        span_sq = max(1.0, objective_span**2)
+        # If variance is extremely low relative to span, plateau risk is high
+        risk = 1.0 - min(1.0, e_var / span_sq)
+        report.barren_plateau_risk = risk
+    else:
+        report.barren_plateau_risk = 1.0
+
+    # Map existing selection_entropy
+    report.selection_entropy = report.bitstring_entropy
 
     # [FEASIBILITY_FILTER_SUMMARY] Log overall feasibility statistics
     logger.info(
@@ -508,10 +598,15 @@ def _feasibility_filter(
     if feasible_total_energies and infeasible_total_energies:
         min_f_final = float(np.min(feasible_total_energies))
         min_inf_final = float(np.min(infeasible_total_energies))
-        if min_f_final >= min_inf_final:
+        sigma_obj = float(np.std(feasible_total_energies)) if len(feasible_total_energies) > 1 else 1.0
+        c_threshold = 3.0
+        
+        energy_gap = min_inf_final - min_f_final
+        
+        if energy_gap <= c_threshold * sigma_obj:
             logger.error(
                 f"[ENERGY_COLLAPSE_FATAL] HARD INVARIANT VIOLATED: "
-                f"min_feasible={min_f_final:.4f} >= min_infeasible={min_inf_final:.4f}")
+                f"energy_gap={energy_gap:.4f} <= {c_threshold} * sigma_obj ({sigma_obj:.4f})")
             # Dump full energy decomposition for forensics
             logger.error(
                 f"[FULL_RUNTIME_ENERGY_FORENSICS] "
@@ -520,8 +615,7 @@ def _feasibility_filter(
                 f"feasible_mean={float(np.mean(feasible_total_energies)):.4f} "
                 f"infeasible_mean={float(np.mean(infeasible_total_energies)):.4f}")
             raise RuntimeError(
-                f"ENERGY_COLLAPSE_FATAL: min_feasible={min_f_final:.4f} >= "
-                f"min_infeasible={min_inf_final:.4f}")
+                f"ENERGY_COLLAPSE_FATAL: energy_gap={energy_gap:.4f} insufficient for topology separation. Must be > {c_threshold * sigma_obj:.4f}")
 
     if inversion and report.total_samples > 20:
         logger.error("[ENERGY_TOPOLOGY_COLLAPSE] Infeasible states dominate basin! Topology is inverted.")
@@ -595,6 +689,7 @@ def _feasibility_filter(
     infeasible_energy_mean = float(np.mean(infeasible_energies)) if infeasible_energies else 0.0
 
     energy_gap_ratio = (infeasible_energy_mean / abs(feasible_energy_mean)) if abs(feasible_energy_mean) > 1e-9 else 0.0
+    report.energy_gap_ratio = energy_gap_ratio
 
     # Cardinality statistics
     cardinality_success_rate = cardinality_successes / max(1, report.total_samples)
@@ -634,6 +729,9 @@ def _feasibility_filter(
 
         divergence_feasible = abs(runtime_min_f - ci_f_energy) if not math.isinf(runtime_min_f) and not math.isinf(ci_f_energy) else float('inf')
         divergence_infeasible = abs(runtime_min_inf - ci_inf_energy) if not math.isinf(runtime_min_inf) and not math.isinf(ci_inf_energy) else float('inf')
+
+        if not math.isinf(ci_f_energy) and abs(ci_f_energy) > 1e-9 and not math.isinf(runtime_min_f):
+            report.approximation_ratio = runtime_min_f / ci_f_energy
 
         print(
             f"[CI_RUNTIME_DIVERGENCE_AUDIT] "
@@ -730,6 +828,12 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                 if not ready:
                     raise RuntimeError("Braket worker failed to stabilize")
 
+            # ── [PHASE 1: CARDINALITY DEGENERACY AUDIT] ─────────────
+            n_assets = len(request.mu)
+            if request.cardinality >= n_assets:
+                self.logger.error(f"[CARDINALITY_DEGENERACY_AUDIT] Cardinality {request.cardinality} is degenerate for {n_assets} assets.")
+                raise ValueError(f"Degenerate Topology: Target cardinality {request.cardinality} >= {n_assets} total assets.")
+
             # Registry validation
             validation_result = self.registry.validate_solver_request(
                 SolverType.BRAKET_LOCAL, {
@@ -746,6 +850,11 @@ class IntegratedBraketSolver(BasePortfolioSolver):
             qubo_flat = Q.flatten().tolist()
             n_binary = len(var_order)
             hilbert_dim = 2 ** n_binary
+            
+            # [PHASE 6 & 11: CANONICAL HAMILTONIAN SERIALIZATION]
+            from qubo_backend.optimization.qubo_model import qubo_to_ising
+            h_ising, J_ising, ising_offset = qubo_to_ising(Q, offset)
+            
             logger.info(
                 f"[QUBO_EXPORT_AUDIT] binary_variables={n_binary} "
                 f"qubo_shape=({n_binary},{n_binary}) "
@@ -779,17 +888,19 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                 f"Q_max={float(np.max(np.abs(Q))):.4f}")
 
             # ── Deterministic shot lock ─────────────────────────────
+            SV1_MAX_SHOTS = 2048
+            DEFAULT_SHOTS = 512
             bench_mode = getattr(request, "benchmark_mode", None)
-            if bench_mode is not None and bench_mode in _BENCHMARK_SHOT_TABLE:
-                shot_config = _BENCHMARK_SHOT_TABLE[bench_mode]
-                shots = shot_config["validation"] if isinstance(shot_config, dict) else shot_config
-                self.logger.info(f"[DETERMINISTIC_SHOT_LOCK] mode={bench_mode} shots={shots} adaptive_shots=DISABLED")
-                print(f"[DETERMINISTIC_SHOT_LOCK] mode={bench_mode} shots={shots} adaptive_shots=DISABLED")
-            elif bench_mode is not None:
-                shots = self.config.shots
-                self.logger.info(f"[DETERMINISTIC_SHOT_LOCK] mode={bench_mode} shots={shots} adaptive_shots=DISABLED")
+            if bench_mode in ["RESEARCH", "benchmark_accuracy"]:
+                shots = SV1_MAX_SHOTS
+            elif bench_mode in ["BALANCED", "benchmark_balanced"]:
+                shots = 1024
+            elif bench_mode in ["FAST", "benchmark_fast"]:
+                shots = 512
             else:
-                shots = self.enhanced_solver._calculate_adaptive_shots(len(request.mu), bench_mode)
+                shots = DEFAULT_SHOTS
+                
+            self.logger.info(f"[DETERMINISTIC_SHOT_LOCK] mode={bench_mode} shots={shots} adaptive_shots=DISABLED")
 
             is_local = (execution_mode == "local" or device == "local")
 
@@ -841,9 +952,13 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                 "is_kn_case": is_kn,
                 "qubo_matrix": qubo_flat,
                 "qubo_offset": float(offset),
+                "h_ising": h_ising.tolist(),
+                "j_ising": J_ising.tolist(),
+                "ising_offset": float(ising_offset),
                 "benchmark_mode": bench_mode,
                 "optimization_strategy": "cobyla",
                 "warm_start_params": getattr(request, "warm_start_params", None),
+                "objective_std": getattr(model.build, "objective_span", 1.0),
             }
 
             self.logger.info(
@@ -917,6 +1032,11 @@ class IntegratedBraketSolver(BasePortfolioSolver):
 
             # ── [RUNTIME_BASIN_DOMINANCE_ENFORCEMENT] (Phase 3) ──
             # Ensure infeasible states NEVER have lower energy than feasible states
+            
+            class HamiltonianCollapseError(Exception):
+                """Raised when the Hamiltonian fails to geometrically separate feasible from infeasible states."""
+                pass
+
             if feasible_energies_test and infeasible_energies_test:
                 min_feas_test = float(np.min(feasible_energies_test))
                 min_inf_test = float(np.min(infeasible_energies_test))
@@ -924,6 +1044,16 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                     self.logger.error(
                         f"[ENERGY_BASIN_COLLAPSE] Runtime inversion detected: "
                         f"min_infeasible={min_inf_test:.4f} < min_feasible={min_feas_test:.4f}")
+                
+                # Strict separation check
+                energy_gap = mean_infeas - mean_feas
+                objective_std = float(req_meta.get("objective_std", 1.0))
+                min_gap = 3.0 * objective_std
+                
+                if energy_gap < min_gap:
+                    raise HamiltonianCollapseError(
+                        f"Hamiltonian collapsed: energy_gap={energy_gap:.4f} < {min_gap:.4f} (3 * sigma)"
+                    )
 
             sep_ratio = abs(mean_infeas) / max(abs(mean_feas), 1e-9) if mean_feas != 0 else 100.0
             
@@ -1040,25 +1170,60 @@ class IntegratedBraketSolver(BasePortfolioSolver):
             # ════════════════════════════════════════════════════════
             # ADAPTIVE STABILIZATION LOOP (Phase 4)
             # ════════════════════════════════════════════════════════
-            max_stabilization_attempts = 2
-            current_attempt = 0
+            # ── [PHASE 1: ABSOLUTE SHOT GOVERNANCE REBUILD] ────────────────────────
+            adaptive_shots = shots
+            estimated_cost = ShotPolicyManager.estimate_cost(device, adaptive_shots)
+            self.logger.info(f"[COST_PROJECTION] device={device} shots={adaptive_shots} estimated_cost=${estimated_cost:.3f}")
+                
+            max_stabilization_attempts = 1 # [PHASE 1: NO RETRY ATTEMPTS]
+            current_attempt = 1
             
-            while current_attempt < max_stabilization_attempts:
-                current_attempt += 1
+            while current_attempt <= max_stabilization_attempts:
                 t0 = time.time()
-                current_shots = shots * current_attempt
+                
+                # Single source of truth. No mutation allowed.
+                current_shots = adaptive_shots
                 
                 self.logger.info(
-                    f"[TEMPERATURE_STABILIZATION] attempt={current_attempt} "
-                    f"shots={current_shots} device={device}")
+                    f"[SHOT_GOVERNANCE_LOCK] attempt={current_attempt} "
+                    f"immutable_shots={current_shots} device={device}")
                 
-                result = await self.resilient_client.run_braket_job(
-                    current_shots, correlation_id, execution_mode, device,
-                    qubits=total_qubits,
-                    qubo_matrix=qubo_flat,
-                    qubo_offset=float(offset),
-                    qaoa_depth=qaoa_depth,
-                    request_meta=req_meta)
+                # [ASYNC_ISOLATION_BARRIER]
+                from qubo_backend.optimization.braket_client_resilient import BraketJobResult
+                result = None
+                
+                # ── [PRE_EXECUTION_CONTRACTION_ESTIMATOR] (Task 8) ────────
+                is_tn1 = "tn1" in device.lower()
+                if is_tn1:
+                    # Estimate heuristics
+                    projected_treewidth = total_qubits * qaoa_depth
+                    projected_flops = (2 ** min(projected_treewidth, 30)) * current_shots
+                    if projected_treewidth > 25 or projected_flops > 2**25:
+                        self.logger.error(f"[PRE_EXECUTION_CONTRACTION_ESTIMATOR] Task rejected before dispatch. projected_treewidth={projected_treewidth} projected_flops={projected_flops} exceeds safe TN1 limits.")
+                        result = BraketJobResult(status="error", backend=device, error="best contraction path exceeds TN1 limit", measurements=[], execution_time_ms=0.0)
+                        break
+
+                try:
+                    async with asyncio.timeout(120.0): # Hard 2-minute safety barrier
+                        result = await self.resilient_client.run_braket_job(
+                            current_shots, correlation_id, execution_mode, device,
+                            qubits=total_qubits,
+                            qubo_matrix=qubo_flat,
+                            qubo_offset=float(offset),
+                            qaoa_depth=qaoa_depth,
+                            request_meta=req_meta)
+                except TimeoutError:
+                    self.logger.error(f"[ASYNC_ISOLATION_BARRIER] Cloud execution timed out.")
+                    result = BraketJobResult(status="error", backend=device, error="TimeoutError", measurements=[], execution_time_ms=0.0)
+                    break
+                except Exception as e:
+                    self.logger.error(f"[ASYNC_ISOLATION_BARRIER] Caught unhandled cloud error: {e}")
+                    result = BraketJobResult(status="error", backend=device, error=f"Exception: {str(e)}", measurements=[], execution_time_ms=0.0)
+                    break
+                
+                if result is None:
+                    result = BraketJobResult(status="error", backend=device, error="UnboundLocalError prevented", measurements=[], execution_time_ms=0.0)
+                    break
                 
                 timing["sampling_ms"] += (time.time() - t0) * 1000
                 
@@ -1097,6 +1262,9 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                     optimization_status = "ENERGY_TOPOLOGY_COLLAPSE"
                 elif "INFEASIBLE" in error_msg:
                     optimization_status = "INFEASIBLE"
+                elif "best contraction path" in error_msg.lower() or "exceeds tn1 limit" in error_msg.lower():
+                    optimization_status = "TOPOLOGY_UNSTABLE"
+                    self.logger.error(f"[DETERMINISTIC_FAILURE_AUDIT] Task rejected due to topological complexity. error={error_msg}")
                 else:
                     optimization_status = "error"
                 
@@ -1194,6 +1362,12 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                 f"feasible_ratio_raw={_safe_float(feasibility_report.feasible_ratio_raw, 0.0):.4f} "
                 f"exact_k_ratio={_safe_float(feasibility_report.exact_k_ratio, 0.0):.4f} "
                 f"positive_alloc_ratio={_safe_float(feasibility_report.strict_positive_allocation_ratio, 0.0):.4f} "
+                f"feasibility_final={_safe_float(feasibility_report.feasible_ratio_raw, 0.0):.4f} "
+                f"strict_positive_allocation_ratio={_safe_float(feasibility_report.strict_positive_allocation_ratio, 0.0):.4f} "
+                f"selection_entropy={feasibility_report.selection_entropy:.4f} "
+                f"energy_gap_ratio={feasibility_report.energy_gap_ratio:.4f} "
+                f"approximation_ratio={feasibility_report.approximation_ratio:.4f} "
+                f"adaptive_shots={shots} "
                 f"certification={feas_cert}")
             
             print(
@@ -1212,15 +1386,14 @@ class IntegratedBraketSolver(BasePortfolioSolver):
             # ── Select best sample ──────────────────────────────────
             native_feasible = False
             repair_applied = False
+            repair_trace = []
 
             if feasibility_report.best_feasible_weights is not None:
                 weights = feasibility_report.best_feasible_weights
                 
-                # ── [HARD_PROJECTOR] (Phase 4) ─────────────────────────
-                from .feasibility_projector import hard_cardinality_projector
-                weights, was_projected = hard_cardinality_projector(weights, request.cardinality, request.tickers)
-                if was_projected:
-                    self.logger.info("[HARD_PROJECTOR_APPLIED] Enforced strict cardinality post-decode.")
+                # ── [STRICT SCIENTIFIC FEASIBILITY] ────────────────────────
+                # All repair heuristics have been removed. If the quantum solver
+                # violates cardinality, it will fail the scientific certification gate.
                 
                 best_sample = feasibility_report.best_feasible_sample
                 native_feasible = True
@@ -1229,7 +1402,7 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                     f"[NATIVE_FEASIBLE_SAMPLE] solver={request.solver} "
                     f"energy={feasibility_report.best_feasible_energy:.6f}")
             else:
-                # ── Priority 3: NO APPROXIMATE REPAIR ─────────────
+                # ── Priority 3: NO APPROXIMATE REPAIR (STRICT_DECODE_MODE) ─────────────
                 self.logger.error(
                     f"[FEASIBLE_MANIFOLD_COLLAPSE] solver={request.solver} "
                     f"NO native feasible sample found in {shots} shots.")
@@ -1237,13 +1410,13 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                     f"[FEASIBLE_MANIFOLD_COLLAPSE] solver={request.solver} "
                     f"feasible_ratio_raw={_safe_float(feasibility_report.feasible_ratio_raw, 0.0):.4f}")
                 
-                # We still need weights to avoid crashing downstream pipeline,
-                # but we mark it as mathematically collapsed.
-                weights = np.zeros(n_assets)
-                best_sample = {}
+                # We still return the best raw sample to preserve scientific diagnostics
+                weights = feasibility_report.best_raw_weights if feasibility_report.best_raw_weights is not None else np.zeros(n_assets)
+                best_sample = feasibility_report.best_raw_sample if feasibility_report.best_raw_sample is not None else {}
                 repair_applied = False
-                optimization_status = "collapsed_feasible_manifold"
+                optimization_status = "DEGRADED_SCIENTIFIC_MODE"
                 native_feasible = False
+                repair_trace.append("manifold_collapse")
 
             active_weights = int(np.sum(weights > 1e-6))
             cardinality_target = request.cardinality
@@ -1261,11 +1434,12 @@ class IntegratedBraketSolver(BasePortfolioSolver):
             weight_sum_ok = abs(float(np.sum(weights)) - 1.0) < 0.01
 
             # Verify constraints BEFORE computing canonical energy
-            constraints = verify_constraints(
+            from .portfolio import validate_allocation
+            validation = validate_allocation(
                 weights, request.sectors, request.cardinality,
                 request.max_sector_exposure, sector_tolerance=1e-5)
 
-            if constraints["all_satisfied"]:
+            if validation.feasible:
                 final_energy = model.evaluate_solution(best_sample)
             else:
                 # Infeasible → compute energy but mark non-comparable
@@ -1278,10 +1452,9 @@ class IntegratedBraketSolver(BasePortfolioSolver):
             scientific_comparability = (
                 native_feasible and
                 not repair_applied and
-                cardinality_delta == 0 and
-                weight_sum_ok and
+                validation.normalization_valid and
                 _safe_float(feasibility_report.feasible_ratio_raw, 0.0) >= _SCIENTIFIC_FEASIBILITY_MIN and
-                constraints["all_satisfied"] and
+                validation.feasible and
                 not math.isinf(final_energy) and
                 not math.isnan(final_energy)
             )
@@ -1363,6 +1536,19 @@ class IntegratedBraketSolver(BasePortfolioSolver):
             fallback_triggered = (requested_origin == "cloud" and actual_origin == "local")
 
             elapsed_ms = (time.time() - start_time) * 1000
+            
+            # ── [PHASE 6: Scientific Metrics Computation] ────────────
+            effective_coupling_degree = len(model.build.bqm.quadratic) / max(1, len(model.build.bqm.variables))
+            manifold_stability_score = feasibility_report.selection_entropy * _safe_float(feasibility_report.feasible_ratio_raw, 0.0)
+            graph_treewidth = effective_coupling_degree * 1.5
+            tensor_complexity = len(model.build.bqm.quadratic) * 2 # Default QAOA depth is 2
+            
+            self.logger.info(
+                f"[ENTANGLEMENT_WIDTH_AUDIT] "
+                f"effective_coupling_degree={effective_coupling_degree:.2f} "
+                f"graph_treewidth_estimate={graph_treewidth:.2f} "
+                f"tensor_contraction_complexity={tensor_complexity} "
+            )
 
             # ── Build metadata ──────────────────────────────────────
             enhanced_metadata = SolverRunMetadata(
@@ -1376,6 +1562,19 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                 reads=len(measurements),
                 energy=final_energy,
                 objective_span=model.build.objective_span,
+                qaoa_depth=None,
+                adaptive_shots=shots,
+                penalty_scale=model.build.objective_span,
+                
+                # Phase 5 & 12
+                repair_trace=repair_trace,
+                energy_landscape_entropy=feasibility_report.selection_entropy,
+                barren_plateau_risk=feasibility_report.barren_plateau_risk,
+                parameter_concentration=feasibility_report.parameter_concentration,
+                sample_diversity=feasibility_report.sample_diversity,
+                effective_hilbert_exploration=feasibility_report.effective_hilbert_exploration,
+                bitstring_entropy=feasibility_report.bitstring_entropy,
+                
                 provider="amazon_braket",
                 backend_name="IntegratedResilientBraketWorker_v3",
                 is_qpu=(execution_mode == "cloud_qpu"),
@@ -1391,6 +1590,7 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                 fallback_triggered=fallback_triggered,
                 fallback_chain=[request.solver] + (["local_fallback"] if fallback_triggered else []),
                 task_arn=result.task_arn,
+                degraded_scientific_mode=result.metadata.get("degraded_scientific_mode", False) if result.metadata else False,
                 device_arn=result.device_arn,
                 execution_mode=result.execution_mode,
                 execution_status=execution_status,
@@ -1402,6 +1602,15 @@ class IntegratedBraketSolver(BasePortfolioSolver):
                 # Feasibility diagnostics (Fix 6)
                 feasibility_native=feasibility_report.feasible_ratio_raw,
                 feasibility_final=1.0 if constraints["all_satisfied"] else 0.0,
+                strict_positive_allocation_ratio=_safe_float(feasibility_report.strict_positive_allocation_ratio, 0.0),
+                selection_entropy=feasibility_report.selection_entropy,
+                energy_gap_ratio=feasibility_report.energy_gap_ratio,
+                approximation_ratio=feasibility_report.approximation_ratio,
+                projected_cost_usd=estimated_cost,
+                manifold_stability_score=manifold_stability_score,
+                effective_coupling_degree=effective_coupling_degree,
+                graph_treewidth_estimate=graph_treewidth,
+                tensor_contraction_complexity=tensor_complexity,
             )
 
             solution = PortfolioSolution(
@@ -1419,6 +1628,40 @@ class IntegratedBraketSolver(BasePortfolioSolver):
             })
             timing["telemetry_ms"] += (time.time() - t0) * 1000
             timing["total_ms"] = (time.time() - start_time) * 1000
+            
+            # ── [PHASE 7: Diagnostic Replay Mode] ────────────────────
+            if optimization_status == "DEGRADED_SCIENTIFIC_MODE" or not scientific_comparability:
+                try:
+                    import os
+                    import builtins
+                    assert json.dumps is builtins.__import__("json").dumps, "JSON shadowing detected!"
+                    
+                    self.logger.info(f"[JSON_SCOPE_AUDIT] Starting diagnostic serialization for session={session_id}")
+                    
+                    replay_dir = os.path.join(os.path.dirname(__file__), "..", "..", "..", "output", "replays")
+                    os.makedirs(replay_dir, exist_ok=True)
+                    replay_path = os.path.join(replay_dir, f"replay_{session_id}_{int(time.time())}.json")
+                    
+                    replay_data = {
+                        "session_id": session_id,
+                        "solver": request.solver,
+                        "device": device,
+                        "qubits": total_qubits,
+                        "shots": current_shots,
+                        "h_ising": model.build.bqm.linear,
+                        "J_ising": {f"{k[0]}|{k[1]}": v for k, v in model.build.bqm.quadratic.items()},
+                        "ising_offset": model.build.bqm.offset,
+                        "best_sample": best_sample,
+                        "weights": weights.tolist() if isinstance(weights, np.ndarray) else weights,
+                        "scientific_comparability": scientific_comparability,
+                        "optimization_status": optimization_status,
+                        "feasibility_report": feasibility_report.to_dict(),
+                    }
+                    with open(replay_path, "w") as f:
+                        json.dump(replay_data, f, indent=2)
+                    self.logger.info(f"[DIAGNOSTIC_REPLAY_SAVED] Saved degraded run to {replay_path}")
+                except Exception as e:
+                    self.logger.error(f"[DIAGNOSTIC_REPLAY_ERROR] Could not save replay data: {e}")
 
             if is_local:
                 print(

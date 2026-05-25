@@ -25,7 +25,6 @@ from qubo_backend.optimization.portfolio import (
     PortfolioSolution,
     greedy_feasible_weights,
     verify_constraints,
-    _repair_budget,
     encode_weights,
     bqm_energy,
 )
@@ -164,11 +163,8 @@ class BraketSolver(BasePortfolioSolver):
 
             # ── Decode to weights and repair ────────────────────────
             weights = self._decode_sample(request, model.build, best_sample)
-            selected = [i for i, w in enumerate(weights) if w > 0]
-            if selected:
-                weights = _repair_budget(
-                    weights, selected, request.sectors, request.max_sector_exposure
-                )
+            if np.sum(weights) > 1e-6:
+                weights = weights / np.sum(weights)
 
             check = verify_constraints(
                 weights, request.sectors, request.cardinality,

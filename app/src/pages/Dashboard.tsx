@@ -931,6 +931,17 @@ export default function Dashboard() {
   }
 
   const PORTFOLIO_DATA = portfolioData;
+
+  // Calculate sector allocation if not provided by backend
+  const portfolio = PORTFOLIO_DATA.portfolio || {};
+  const computedSectorAllocation = Object.values(portfolio).reduce((acc, holding) => {
+    acc[holding.sector] = (acc[holding.sector] || 0) + holding.weight;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const sectorAllocation = PORTFOLIO_DATA.sector_allocation && Object.keys(PORTFOLIO_DATA.sector_allocation).length > 0 
+    ? PORTFOLIO_DATA.sector_allocation 
+    : computedSectorAllocation;
   const solverMeta = PORTFOLIO_DATA.solver_metadata;
   const solverPenalty = solverMeta?.penalty_weights ?? {};
   const solveTime = solverMeta ? `${(solverMeta.solve_time_ms / 1000).toFixed(2)}s` : 'Pending';
@@ -1091,9 +1102,9 @@ export default function Dashboard() {
                     <CardTitle className="text-foreground text-sm font-semibold">Asset Allocation</CardTitle>
                   </CardHeader>
                   <CardContent className="p-3 flex-1 flex flex-col justify-between">
-                    <SectorChart sectors={PORTFOLIO_DATA.sector_allocation} />
+                    <SectorChart sectors={sectorAllocation} />
                     <div className="mt-4 space-y-2">
-                      {Object.entries(PORTFOLIO_DATA.sector_allocation || {})
+                      {Object.entries(sectorAllocation || {})
                         .sort((a, b) => b[1] - a[1])
                         .map(([sector, weight], i) => (
                       <div key={sector} className="flex items-center justify-between text-xs">

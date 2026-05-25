@@ -41,6 +41,18 @@ interface ExecutionStatus {
   taskArn?: string;
   deviceArn?: string;
   executionModeLabel?: string;
+  scientific_comparability?: boolean;
+  optimization_status?: string;
+  repair_trace?: string[];
+  parity_status?: string;
+  scientific_gate?: {
+    strict_ratio?: number;
+    raw_ratio?: number;
+    comparability_status?: string;
+  };
+  allocation_leakage_ratio?: number;
+  repair_count?: number;
+  topology_violation_ratio?: number;
 }
 
 interface UserQuotas {
@@ -190,16 +202,33 @@ const BenchmarkExecutionWorkflow: React.FC = () => {
     }, 2000); // Poll every 2 seconds
   };
 
-  const getExecutionStatusIcon = (status: string) => {
-    switch (status) {
+  const getExecutionStatusIcon = (statusObj: ExecutionStatus) => {
+    const isSciFailure = 
+      statusObj.scientific_comparability === false || 
+      statusObj.parity_status === 'NON_COMPARABLE' || 
+      statusObj.optimization_status === 'INFEASIBLE' ||
+      statusObj.optimization_status === 'TOPOLOGY_UNSTABLE' ||
+      (statusObj.scientific_gate?.strict_ratio ?? 0) <= 0 ||
+      (statusObj.allocation_leakage_ratio ?? 0) > 0 ||
+      (statusObj.repair_count ?? 0) > 0 ||
+      (statusObj.topology_violation_ratio ?? 0) > 0;
+    
+    if (isSciFailure) {
+      return <AlertCircle className="w-4 h-4 text-amber-500" />;
+    }
+
+    switch (statusObj.status) {
       case 'pending':
       case 'authenticating':
       case 'validating_quotas':
       case 'governance_checking':
         return <Clock className="w-4 h-4 text-yellow-500" />;
       case 'approved':
+      case 'SUCCESS':
         return <CheckCircle className="w-4 h-4 text-green-500" />;
       case 'rejected':
+      case 'FAILED':
+      case 'SCIENTIFIC_VIOLATION':
       case 'failed':
         return <AlertCircle className="w-4 h-4 text-red-500" />;
       case 'executing':
@@ -215,20 +244,41 @@ const BenchmarkExecutionWorkflow: React.FC = () => {
   };
 
   const getStatusBadge = (status: ExecutionStatus) => {
-    if (status.status === 'failed' || status.status === 'rejected') {
-      return <Badge variant="destructive">DEGRADED</Badge>;
+    // Phase 7: Graded Frontend Scientific Truthfulness
+    
+    // 1. MANIFOLD_COLLAPSE (If strict_ratio is exactly 0)
+    if ((status.scientific_gate?.strict_ratio ?? 0) <= 0 && status.status === 'completed') {
+      return <Badge className="bg-red-600 hover:bg-red-700 text-white border-none shadow-[0_0_10px_rgba(220,38,38,0.5)]">MANIFOLD_COLLAPSE</Badge>;
     }
     
+    // 2. TOPOLOGY_UNSTABLE (If any allocation leakage or repair happened)
+    if ((status.allocation_leakage_ratio ?? 0) > 0 || (status.repair_count ?? 0) > 0 || (status.topology_violation_ratio ?? 0) > 0) {
+      return <Badge className="bg-orange-600 hover:bg-orange-700 text-white border-none shadow-[0_0_10px_rgba(234,88,12,0.5)]">TOPOLOGY_UNSTABLE</Badge>;
+    }
+
+    // 3. FALLBACK_ONLY (If quantum failed and fell back to classical)
     if (status.fallbackTriggered || status.executionOrigin === 'fallback') {
-      return <Badge className="bg-orange-500 hover:bg-orange-600 text-white border-none">FALLBACK</Badge>;
+      return <Badge className="bg-amber-500 hover:bg-amber-600 text-white border-none shadow-[0_0_10px_rgba(245,158,11,0.5)]">FALLBACK_ONLY</Badge>;
     }
     
-    if (status.executionOrigin === 'cloud') {
-      return <Badge className="bg-cyan-500 hover:bg-cyan-600 text-white border-none shadow-[0_0_10px_rgba(6,182,212,0.5)]">CLOUD</Badge>;
+    // 4. NUMERICAL_INSTABILITY
+    if (status.status === 'failed' || status.status === 'rejected') {
+      return <Badge variant="destructive">NUMERICAL_INSTABILITY</Badge>;
     }
     
-    if (status.executionOrigin === 'local' || status.status === 'completed') {
-      return <Badge variant="secondary" className="bg-slate-500 text-white border-none">LOCAL</Badge>;
+    // 5. NON_COMPARABLE
+    if (status.scientific_comparability === false || status.parity_status === 'NON_COMPARABLE' || status.optimization_status === 'INFEASIBLE') {
+      return <Badge className="bg-gray-500 hover:bg-gray-600 text-white border-none">NON_COMPARABLE</Badge>;
+    }
+    
+    // 6. PARTIALLY_FEASIBLE
+    if ((status.scientific_gate?.strict_ratio ?? 0) > 0 && (status.scientific_gate?.strict_ratio ?? 0) < 1.0) {
+      return <Badge className="bg-blue-500 hover:bg-blue-600 text-white border-none shadow-[0_0_10px_rgba(59,130,246,0.5)]">PARTIALLY_FEASIBLE</Badge>;
+    }
+    
+    // 7. COMPARABLE (Fully valid)
+    if ((status.scientific_gate?.strict_ratio ?? 0) === 1.0 || status.status === 'completed') {
+      return <Badge className="bg-green-500 hover:bg-green-600 text-white border-none shadow-[0_0_10px_rgba(34,197,94,0.5)]">COMPARABLE</Badge>;
     }
     
     return <Badge variant="outline">{status.status.toUpperCase()}</Badge>;
@@ -437,9 +487,7 @@ const BenchmarkExecutionWorkflow: React.FC = () => {
                     {
                       category: 'CLOUD EXECUTION',
                       solvers: [
-                        { id: 'AWS_BRAKET_TN1', label: 'AWS Braket TN1' },
-                        { id: 'AWS_BRAKET_SV1', label: 'AWS Braket SV1' },
-                        { id: 'AWS_BRAKET_DM1', label: 'AWS Braket DM1' }
+                        { id: 'AWS_BRAKET_SV1', label: 'AWS Braket SV1' }
                       ]
                     },
                     {
@@ -588,7 +636,7 @@ const BenchmarkExecutionWorkflow: React.FC = () => {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      {getExecutionStatusIcon(executionStatus.status)}
+                      {getExecutionStatusIcon(executionStatus)}
                       Execution Status
                     </CardTitle>
                     <CardDescription>
@@ -655,7 +703,57 @@ const BenchmarkExecutionWorkflow: React.FC = () => {
                         </Alert>
                       )}
 
-                      {executionStatus.status === 'completed' && (
+                      {(() => {
+                        if (executionStatus.status !== 'completed' && executionStatus.status !== 'SUCCESS' && executionStatus.status !== 'PARTIAL_SUCCESS' && executionStatus.status !== 'FAILED' && executionStatus.status !== 'FALLBACK' && executionStatus.status !== 'SCIENTIFIC_VIOLATION') return null;
+
+                        const isTopologyInvalid = (executionStatus.allocation_leakage_ratio ?? 0) > 0 || (executionStatus.topology_violation_ratio ?? 0) > 0 || executionStatus.optimization_status === 'TOPOLOGY_UNSTABLE';
+                        const isInfeasible = executionStatus.optimization_status === 'INFEASIBLE' || (executionStatus.scientific_gate?.strict_ratio ?? 0) <= 0;
+                        const isNonComparable = executionStatus.scientific_comparability === false || executionStatus.parity_status === 'NON_COMPARABLE' || (executionStatus.repair_count ?? 0) > 0 || executionStatus.status === 'FAILED' || executionStatus.status === 'SCIENTIFIC_VIOLATION';
+
+                        if (isTopologyInvalid) {
+                          return (
+                            <Alert variant="destructive" className="bg-red-950/30 border-red-900/50">
+                              <AlertCircle className="h-4 w-4 text-red-500" />
+                              <AlertDescription className="text-red-400 font-semibold">
+                                TOPOLOGY_INVALID: Decode corruption detected. Normalization mutated topology or allocation leakage ratio &gt; 0.
+                              </AlertDescription>
+                            </Alert>
+                          );
+                        } else if (isInfeasible || isNonComparable) {
+                          return (
+                            <Alert variant="destructive" className="bg-orange-950/20 border-orange-900/50">
+                              <AlertCircle className="h-4 w-4 text-orange-500" />
+                              <AlertDescription className="text-orange-400 font-semibold">
+                                Quantum execution completed but no scientifically valid feasible quantum states were discovered.
+                              </AlertDescription>
+                            </Alert>
+                          );
+                        }
+
+                        return (
+                          <Alert className="bg-green-950/20 border-green-900/50">
+                            <AlertCircle className="h-4 w-4 text-green-500" />
+                            <AlertDescription className="text-green-400 font-semibold">
+                              COMPARABLE: Valid benchmark execution.
+                            </AlertDescription>
+                          </Alert>
+                        );
+                      })()}
+
+                      {(() => {
+                        const isSciFailure = 
+                          executionStatus.scientific_comparability === false || 
+                          executionStatus.parity_status === 'NON_COMPARABLE' || 
+                          executionStatus.optimization_status === 'INFEASIBLE' ||
+                          executionStatus.optimization_status === 'TOPOLOGY_UNSTABLE' ||
+                          (executionStatus.scientific_gate?.strict_ratio ?? 0) <= 0 ||
+                          (executionStatus.allocation_leakage_ratio ?? 0) > 0 ||
+                          (executionStatus.repair_count ?? 0) > 0 ||
+                          (executionStatus.topology_violation_ratio ?? 0) > 0 ||
+                          executionStatus.status === 'FAILED' || 
+                          executionStatus.status === 'SCIENTIFIC_VIOLATION';
+
+                        return (executionStatus.status === 'completed' || executionStatus.status === 'SUCCESS' || executionStatus.status === 'PARTIAL_SUCCESS' || executionStatus.status === 'FALLBACK') && !isSciFailure && (
                         <div className="space-y-4">
                           <Label className="text-sm font-semibold text-slate-300">Operational Comparison Matrix</Label>
                           <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-950">
@@ -663,9 +761,10 @@ const BenchmarkExecutionWorkflow: React.FC = () => {
                               <thead className="bg-slate-900 text-slate-500 uppercase tracking-tighter">
                                 <tr>
                                   <th className="px-3 py-2 font-medium">Solver</th>
-                                  <th className="px-3 py-2 font-medium">Category</th>
                                   <th className="px-3 py-2 font-medium">Origin</th>
-                                  <th className="px-3 py-2 font-medium">Status</th>
+                                  <th className="px-3 py-2 font-medium">Infra Status</th>
+                                  <th className="px-3 py-2 font-medium">Opt Status</th>
+                                  <th className="px-3 py-2 font-medium">Sci Status</th>
                                   <th className="px-3 py-2 font-medium">Latency</th>
                                   <th className="px-3 py-2 font-medium">Task ARN</th>
                                 </tr>
@@ -676,19 +775,26 @@ const BenchmarkExecutionWorkflow: React.FC = () => {
                                     {executionStatus.executionModeLabel || 'Unknown'}
                                   </td>
                                   <td className="px-3 py-3">
-                                    <Badge variant="outline" className="text-[10px]">
-                                      {executionStatus.executionOrigin === 'cloud' ? 'CLOUD' : 'LOCAL'}
-                                    </Badge>
-                                  </td>
-                                  <td className="px-3 py-3">
                                     <Badge className={executionStatus.executionOrigin === 'cloud' ? 'bg-cyan-500/20 text-cyan-400' : 'bg-slate-500/20 text-slate-400'}>
                                       {executionStatus.executionOrigin?.toUpperCase()}
                                     </Badge>
                                   </td>
                                   <td className="px-3 py-3">
                                     <span className="flex items-center gap-1">
-                                      <CheckCircle className="w-3 h-3 text-green-500" />
+                                      {['completed', 'SUCCESS', 'PARTIAL_SUCCESS', 'success', 'success_with_warnings'].includes(executionStatus.status) ? <CheckCircle className="w-3 h-3 text-green-500" /> : <AlertCircle className="w-3 h-3 text-red-500" />}
                                       {executionStatus.status.toUpperCase()}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3">
+                                    <span className="flex items-center gap-1">
+                                      {executionStatus.optimization_status === 'decoded' || executionStatus.optimization_status === 'SUCCESS' ? <CheckCircle className="w-3 h-3 text-green-500" /> : <AlertCircle className="w-3 h-3 text-orange-500" />}
+                                      {executionStatus.optimization_status?.toUpperCase() || 'UNKNOWN'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-3">
+                                    <span className="flex items-center gap-1">
+                                      {(executionStatus.scientific_comparability as boolean | undefined) !== false ? <CheckCircle className="w-3 h-3 text-green-500" /> : <AlertCircle className="w-3 h-3 text-red-500" />}
+                                      {(executionStatus.scientific_comparability as boolean | undefined) !== false ? 'COMPARABLE' : 'NON-COMPARABLE'}
                                     </span>
                                   </td>
                                   <td className="px-3 py-3 text-slate-400">
@@ -714,8 +820,9 @@ const BenchmarkExecutionWorkflow: React.FC = () => {
                               </pre>
                             </div>
                           </div>
-                        </div>
-                      )}
+                          </div>
+                        );
+                      })()}
                     </div>
                   </CardContent>
                 </Card>

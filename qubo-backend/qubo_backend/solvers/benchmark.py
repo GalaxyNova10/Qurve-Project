@@ -45,6 +45,7 @@ from qubo_backend.runtime_safety import sanitize_json
 from .registry import available_solvers
 from .benchmark_certification import certify_benchmark_result
 from .manifold_health import compute_manifold_health
+from qubo_backend.events import event_bus
 
 logger = logging.getLogger(__name__)
 
@@ -132,7 +133,8 @@ def _empty_result(solver_id: str, status: str = "error",
             "requested_solver": solver_id,
             "actual_solver": solver_id,
             "execution_origin": "unknown",
-            "repair_used": False
+            "repair_used": False,
+            "result_origin": "UNKNOWN",
         },
         "optimization_status": status,
         "feasible_ratio_raw": 0.0,
@@ -156,7 +158,10 @@ def _empty_result(solver_id: str, status: str = "error",
             "inversion_detected": False,
             "manifold_status": "unknown",
             "comparability_status": "non_comparable",
+            "parity_status": "unknown",
         },
+        "native_solver_result": None,
+        "fallback_solver_result": None,
     }
 
 
@@ -272,6 +277,15 @@ async def run_benchmark(
     isolation_audit = []
 
     bqm_build_ref = build_portfolio_bqm(request)
+    
+    # ── [PHASE 1: STATIC FEASIBILITY GEOMETRY ANALYZER] ──────────────
+    from qubo_backend.optimization.feasibility_analyzer import analyze_feasibility_geometry, FeasibilityGeometryError
+    try:
+        geometry_metrics = analyze_feasibility_geometry(request, bqm_build_ref)
+    except FeasibilityGeometryError as e:
+        logger.error(f"[FEASIBILITY_GEOMETRY_REJECTION] {e}")
+        return _empty_result("auto", status="rejected", reason=str(e))
+        
     objective_span = bqm_build_ref.objective_span
 
     # ── [WARM_START_PROPAGATION] Initialize propagator ──────────────
@@ -296,7 +310,7 @@ async def run_benchmark(
         from braket.circuits import Circuit, Observable
         from qubo_backend.optimization.portfolio import (
             PortfolioSolution, SolverRunMetadata,
-            ensure_numpy_weights, _repair_budget,
+            ensure_numpy_weights,
             verify_constraints, compute_metrics,
         )
         from qubo_backend.optimization.qubo_model import decode_sample_to_weights, build_qubo_model
@@ -483,14 +497,7 @@ async def run_benchmark(
         weights = decode_sample_to_weights(model, best_sample)
         weights = ensure_numpy_weights(weights)
         
-        # Repair if needed
-        selected = [i for i, w in enumerate(weights) if w > 1e-6]
-        if selected:
-            weights = _repair_budget(
-                weights, selected,
-                bench_request.sectors, bench_request.max_sector_exposure
-            )
-        
+        # Verify constraints
         # Verify constraints
         constraints = verify_constraints(
             weights, bench_request.sectors, bench_request.cardinality,
@@ -550,43 +557,22 @@ async def run_benchmark(
                     f"[WARM_START_PROPAGATION] injecting into {solver_id} "
                     f"params={ws_params} energy={best_e:.6f}")
 
-        # ── [ADAPTIVE_STABILIZATION_LOOP] ───────────────────
-        retry_count = 0
-        max_retries = 1
-        current_strict_ratio = 0.0
-
-        # ── [ADAPTIVE_QAOA_CALIBRATION] For quantum solvers ──
-        if solver_id in ("AWS_BRAKET_SV1", "AWS_BRAKET_TN1", "AWS_BRAKET_CLOUD", "AWS_BRAKET_DM1"):
-            while qaoa_calibration.should_escalate() and qaoa_calibration.state.attempts < 3:
-                qaoa_calibration.escalate()
-                logger.info(
-                    f"[ADAPTIVE_QAOA_CALIBRATION] escalated before execution "
-                    f"depth={qaoa_calibration.state.depth} shots={qaoa_calibration.state.shots}")
-
-        while retry_count <= max_retries:
-            if solver_id == "neal":
-                from qubo_backend.optimization.dwave_sa_solver import (
-                    NealSASolver, BenchmarkExecutionConfig, PrecisionMode, NealSASolverConfig,
-                )
-                benchmark_config = BenchmarkExecutionConfig(
-                    precision_mode=PrecisionMode.BENCHMARK_FAST,
-                    num_reads=50 if retry_count > 0 else 25,
-                    num_sweeps=100 if retry_count > 0 else 50,
-                    max_problem_size=30,
-                    aggressive_sparsification=True, covariance_threshold=0.015,
-                )
-                neal_config = NealSASolverConfig(benchmark_mode=True, benchmark_config=benchmark_config)
-                neal_solver = NealSASolver(neal_config)
-                solution = await neal_solver.solve_async(bench_request)
-            else:
-                solution = await asyncio.to_thread(route_and_solve, bench_request, settings)
-
-            current_strict_ratio = _safe_metric(getattr(solution.metadata, "strict_positive_allocation_ratio", 0.0), 0.0)
-            if current_strict_ratio >= 0.25 or retry_count >= max_retries:
-                break
-
-            retry_count += 1
-            logger.info(f"[ADAPTIVE_MANIFOLD_STABILIZATION] triggered=True solver={solver_id} old_strict={current_strict_ratio:.4f} retry={retry_count}")
+        if solver_id == "neal":
+            from qubo_backend.optimization.dwave_sa_solver import (
+                NealSASolver, BenchmarkExecutionConfig, PrecisionMode, NealSASolverConfig,
+            )
+            benchmark_config = BenchmarkExecutionConfig(
+                precision_mode=PrecisionMode.BENCHMARK_FAST,
+                num_reads=25,
+                num_sweeps=50,
+                max_problem_size=30,
+                aggressive_sparsification=True, covariance_threshold=0.015,
+            )
+            neal_config = NealSASolverConfig(benchmark_mode=True, benchmark_config=benchmark_config)
+            neal_solver = NealSASolver(neal_config)
+            solution = await neal_solver.solve_async(bench_request)
+        else:
+            solution = await asyncio.to_thread(route_and_solve, bench_request, settings)
 
         return solution
 
@@ -666,7 +652,7 @@ async def run_benchmark(
                 # ── FEASIBILITY VALIDATION ──────────────────────────
                 # [CANONICAL_ARRAY_COERCION] Ensure weights are np.ndarray before validation
                 from dataclasses import replace
-                from qubo_backend.optimization.portfolio import ensure_numpy_weights, _repair_budget
+                from qubo_backend.optimization.portfolio import ensure_numpy_weights
                 coerced_weights = ensure_numpy_weights(solution.weights)
                 solution = replace(solution, weights=coerced_weights)
 
@@ -691,11 +677,8 @@ async def run_benchmark(
                 if solver_id == "neal":
                     selected = [i for i, w in enumerate(solution.weights) if w > 1e-6]
                     if selected:
-                        from qubo_backend.optimization.portfolio import (
-                            sector_allocation,
-                            _repair_sector_violations,
-                            _repair_budget,
-                        )
+                        from qubo_backend.optimization.portfolio import sector_allocation
+                        
                         pre_repair_sectors = sector_allocation(solution.weights, request.sectors)
                         violating_sectors = {
                             s: exp for s, exp in pre_repair_sectors.items()
@@ -703,7 +686,7 @@ async def run_benchmark(
                         }
                         logger.info(
                             f"[SECTOR_PENALTY_FORENSICS] solver={solver_id} "
-                            f"pre_repair_sectors={pre_repair_sectors} "
+                            f"sectors={pre_repair_sectors} "
                             f"violating={violating_sectors} "
                             f"limit={request.max_sector_exposure} "
                             f"selected={selected} "
@@ -711,39 +694,10 @@ async def run_benchmark(
                         print(
                             f"[SECTOR_PENALTY_FORENSICS] solver={solver_id} "
                             f"sectors={pre_repair_sectors} violations={violating_sectors}")
-
+                        
                         if violating_sectors:
-                            # [PORTFOLIO_REPAIR_AUDIT] Apply proper sector violation repair
-                            repaired_weights = _repair_sector_violations(
-                                solution.weights, selected,
-                                request.sectors, request.max_sector_exposure,
-                                max_rounds=20,
-                            )
-
-                            post_repair_sectors = sector_allocation(repaired_weights, request.sectors)
-                            remaining_violations = {
-                                s: exp for s, exp in post_repair_sectors.items()
-                                if exp > request.max_sector_exposure + 1e-6
-                            }
-
-                            logger.info(
-                                f"[PORTFOLIO_REPAIR_AUDIT] solver={solver_id} "
-                                f"pre_violations={len(violating_sectors)} "
-                                f"post_violations={len(remaining_violations)} "
-                                f"post_repair_sectors={post_repair_sectors} "
-                                f"weights_sum={float(np.sum(repaired_weights)):.4f}")
-                            print(
-                                f"[PORTFOLIO_REPAIR_AUDIT] solver={solver_id} "
-                                f"violations_before={len(violating_sectors)} "
-                                f"violations_after={len(remaining_violations)}")
-
-                            # Final budget normalization
-                            repaired_weights = _repair_budget(
-                                repaired_weights, selected,
-                                request.sectors, request.max_sector_exposure,
-                            )
-
-                            solution = replace(solution, weights=repaired_weights)
+                            # We strictly DO NOT repair. If quantum solver violates, it fails scientifically.
+                            logger.info(f"[PORTFOLIO_REPAIR_AUDIT] solver={solver_id} Violations detected but repairs are STRICTLY FORBIDDEN.")
 
                 constraints = verify_constraints(
                     solution.weights, request.sectors, request.cardinality,
@@ -879,25 +833,30 @@ async def run_benchmark(
                 is_quantum_solver = solver_id in ("AWS_BRAKET_LOCAL", "AWS_BRAKET_SV1", "AWS_BRAKET_TN1", "AWS_BRAKET_CLOUD", "AWS_BRAKET_DM1", "qiskit_qaoa")
                 is_annealing_solver = solver_id == "neal"
 
-                # Relaxed thresholds for quantum/annealing solvers
+                # ── [CRITICAL REFINEMENT 2: DYNAMIC COMPARABILITY THRESHOLDS] ─────────
+                qaoa_depth = getattr(solution.metadata, "qaoa_depth", 1)
+                if qaoa_depth is None:
+                    qaoa_depth = 1
+                    
                 if is_quantum_solver or is_annealing_solver:
-                    strict_threshold = 0.01  # Much more lenient for quantum
-                    raw_threshold = 0.05     # More lenient for quantum
-                    violation_tolerance = 0.15  # Allow small constraint violations
+                    if qaoa_depth == 1:
+                        strict_threshold = 0.03
+                    elif qaoa_depth == 2:
+                        strict_threshold = 0.08
+                    else:
+                        strict_threshold = 0.15
+                        
+                    raw_threshold = strict_threshold
+                    violation_tolerance = 0.05
                 else:
                     strict_threshold = 0.05 if is_local_calibration else 0.25
                     raw_threshold = 0.10 if is_local_calibration else 0.50
                     violation_tolerance = 0.05  # Tighter for classical
 
                 if strict_ratio < strict_threshold:
-                    if strict_ratio > 0:
-                        scientific_comparability = True
-                        gate_warnings.append(f"strict_ratio={strict_ratio:.4f} < {strict_threshold:.2f} (warning)")
-                        logger.info(f"[SCIENTIFIC_GATE_AUDIT] solver={solver_id} WARNING: strict_ratio={strict_ratio:.4f} < {strict_threshold:.2f}")
-                    else:
-                        scientific_comparability = False
-                        gate_failures.append(f"strict_ratio={strict_ratio:.4f} < {strict_threshold:.2f}")
-                        logger.warning(f"[SCIENTIFIC_GATE_AUDIT] solver={solver_id} FAIL: strict_ratio={strict_ratio:.4f} < {strict_threshold:.2f}")
+                    scientific_comparability = False
+                    gate_failures.append(f"strict_ratio={strict_ratio:.4f} < {strict_threshold:.2f}")
+                    logger.warning(f"[SCIENTIFIC_GATE_AUDIT] solver={solver_id} FAIL: strict_ratio={strict_ratio:.4f} < {strict_threshold:.2f}")
 
                 if feasible_ratio_raw < raw_threshold:
                     if constraint_violation_severity <= violation_tolerance:
@@ -915,15 +874,11 @@ async def run_benchmark(
                     logger.error(f"[SCIENTIFIC_GATE_AUDIT] solver={solver_id} FAIL: inversion_detected=True")
 
                 if is_repaired:
-                    # Repaired solutions are still comparable if repair was minimal
-                    if constraint_violation_severity <= violation_tolerance:
-                        gate_warnings.append("is_repaired=True but within tolerance")
-                        logger.info(f"[SCIENTIFIC_GATE_AUDIT] solver={solver_id} PASS_WITH_WARNING: repaired within tolerance")
-                    else:
-                        scientific_comparability = False
-                        gate_failures.append("is_repaired=True")
-                        logger.info(f"[SCIENTIFIC_GATE_AUDIT] solver={solver_id} FAIL: is_repaired=True")
-
+                    # ── [PHASE 5: STRICT SCIENTIFIC SUCCESS RULES] ────────
+                    # A solver is COMPARABLE ONLY IF repair_count == 0
+                    scientific_comparability = False
+                    gate_failures.append("is_repaired=True (STRICTLY FORBIDDEN)")
+                    logger.error(f"[SCIENTIFIC_GATE_AUDIT] solver={solver_id} FAIL: is_repaired=True. Synthetic repair is forbidden.")
                 if gate_warnings:
                     logger.info(f"[SCIENTIFIC_GATE_FORENSICS] solver={solver_id} warnings={gate_warnings}")
 
@@ -966,16 +921,39 @@ async def run_benchmark(
                 if opt_status in ("non_comparable", "sampling_collapse", "encoding_instability", "scalability_limit", "collapsed_manifold"): confidence = 0.0
                 confidence = max(0.0, min(1.0, confidence))
 
-                # ── Status determination ────────────────────────────
-                final_status = "success"
+                # ── [PHASE 4: SV1 PRODUCTIONIZATION] ─────────────
+                allocation_leakage_ratio = getattr(solution.metadata, "allocation_leakage_ratio", 0.0)
+                repair_count = getattr(solution.metadata, "repair_count", 0)
+                if is_repaired:
+                    repair_count = max(1, repair_count)
+
+                # A solver is SUCCESS only if strict conditions met:
+                is_strict_success = (
+                    strict_ratio > 0 and
+                    allocation_leakage_ratio == 0.0 and
+                    repair_count == 0 and
+                    scientific_comparability and
+                    feasible_ratio_raw > 0.0
+                )
+
+                final_status = "SUCCESS" if is_strict_success else "FAILED"
+
+                # A classical fallback must NEVER upgrade FAILED to SUCCESS
                 if is_fallback:
-                    final_status = "fallback"
-                if not scientific_comparability:
+                    final_status = "FALLBACK"
+                
+                if final_status == "FAILED" and not scientific_comparability:
                     final_status = "SCIENTIFIC_VIOLATION"
-                    logger.warning(f"[SCIENTIFIC_VIOLATION_RECORDED] solver={solver_id} status=NON_COMPARABLE")
-                elif gate_warnings:
-                    final_status = "success_with_warnings"
-                    logger.info(f"[SCIENTIFIC_GATE_FORENSICS] solver={solver_id} status=success_with_warnings warnings={len(gate_warnings)}")
+
+                # Set Isolation = STABLE ONLY when no fallback, no repair, no topology mutation
+                isolation_status = "STABLE" if (not is_fallback and repair_count == 0 and allocation_leakage_ratio == 0.0) else "DEGRADED"
+
+                # ── Result Origin Classification ────────────────────
+                result_origin = "NATIVE_QUANTUM"
+                if is_fallback:
+                    result_origin = "FALLBACK_CLASSICAL"
+                elif is_repaired:
+                    result_origin = "SYNTHETIC_REPAIR"
 
                 provenance = {
                     "requested_solver": solver_id,
@@ -983,6 +961,7 @@ async def run_benchmark(
                     "execution_origin": solution.metadata.execution_origin,
                     "repair_used": is_repaired,
                     "fallback_triggered": is_fallback,
+                    "result_origin": result_origin,
                     "benchmark_mode": benchmark_mode,
                 }
 
@@ -1001,6 +980,38 @@ async def run_benchmark(
                 # ── [GLOBAL_SOLVER_FORENSICS] Record audit ──────────
                 forensics.audit_feasibility_parity(solver_id, constraints["all_satisfied"], True)
                 forensics.audit_decode_parity(solver_id, solution.weights)
+                
+                # Format native vs fallback results
+                native_res = None
+                fallback_res = None
+                
+                base_result = {
+                    "solver": solver_id,
+                    "actual_solver": solution.metadata.solver,
+                    "energy": objective_energy,
+                    "raw_energy": solution.energy,
+                    "feasible": constraints["all_satisfied"],
+                    "metrics": metrics,
+                    "execution_origin": solution.metadata.execution_origin,
+                    "repair_trace": getattr(solution.metadata, "repair_trace", []),
+                }
+                
+                if is_fallback:
+                    fallback_res = base_result
+                    native_res = {
+                        "solver": solver_id,
+                        "status": "error",
+                        "feasible": False,
+                        "fallback_reason": solution.metadata.fallback_reason
+                    }
+                else:
+                    native_res = base_result
+                    
+                parity_status = "unknown"
+                if is_fallback:
+                    parity_status = "diverged" if constraints["all_satisfied"] else "consistent_failure"
+                else:
+                    parity_status = "consistent" if constraints["all_satisfied"] else "consistent_failure"
 
                 return {
                     "solver": solver_id,
@@ -1045,7 +1056,7 @@ async def run_benchmark(
                     "avg_cardinality_delta": float(cardinality_delta),
                     "invalid_measurement_ratio": 0.0,
                     "repaired_sample_ratio": 1.0 if is_repaired else 0.0,
-                    "isolation_status": "success",
+                    "isolation_status": isolation_status,
                     "scientific_gate": {
                         "strict_ratio": strict_ratio,
                         "raw_ratio": feasible_ratio_raw,
@@ -1053,10 +1064,13 @@ async def run_benchmark(
                         "inversion_detected": inversion_detected,
                         "manifold_status": manifold_status,
                         "comparability_status": comparability_status,
+                        "parity_status": parity_status,
                         "gate_warnings": gate_warnings,
                         "gate_failures": gate_failures,
                         "violation_tolerance": violation_tolerance,
                     },
+                    "native_solver_result": native_res,
+                    "fallback_solver_result": fallback_res,
                 }
 
             except Exception as exc:
@@ -1100,22 +1114,32 @@ async def run_benchmark(
     total_elapsed = round((time.perf_counter() - total_start) * 1000, 3)
 
     # ── PHASE 4: PARTIAL SUCCESS BENCHMARK MODE ─────────────────────
+    quantum_results = [r for r in results if r.get("solver") not in ("classical", "neal")]
+    successful_quantum_solvers = len([r for r in quantum_results if r.get("status") in ("success", "success_with_warnings") and r.get("feasible") and r.get("scientific_comparability")])
+
     success_count = len([r for r in results if r.get("status") in ("success", "success_with_warnings")])
     fallback_count = len([r for r in results if r.get("status") == "fallback"])
     error_count = len([r for r in results if r.get("status") == "error"])
     skipped_count = len([r for r in results if r.get("status") == "skipped"])
     sci_violation_count = len([r for r in results if r.get("status") == "SCIENTIFIC_VIOLATION"])
 
-    if success_count + fallback_count > 0 and error_count + sci_violation_count > 0:
-        benchmark_status = "PARTIAL_SUCCESS"
-    elif success_count + fallback_count > 0:
-        benchmark_status = "SUCCESS"
-    else:
+    successful_solvers_total = len([r for r in results if r.get("status") in ("success", "success_with_warnings", "fallback")])
+    has_comparable = any(r.get("scientific_comparability") for r in results)
+    has_feasible = any(r.get("feasible") for r in results)
+
+    if successful_solvers_total >= 1 and has_comparable and has_feasible:
+        if error_count + sci_violation_count > 0:
+            benchmark_status = "PARTIAL_SUCCESS"
+        else:
+            benchmark_status = "SUCCESS"
+    elif successful_solvers_total == 0:
         benchmark_status = "FAILED"
+    else:
+        benchmark_status = "PARTIAL_SUCCESS"
 
     logger.info(
-        "[BENCHMARK_STATUS] status=%s success=%s fallback=%s error=%s skipped=%s sci_violation=%s",
-        benchmark_status, success_count, fallback_count, error_count, skipped_count, sci_violation_count,
+        "[BENCHMARK_STATUS] status=%s quantum_success=%s success=%s fallback=%s error=%s skipped=%s sci_violation=%s",
+        benchmark_status, successful_quantum_solvers, success_count, fallback_count, error_count, skipped_count, sci_violation_count,
     )
 
     # ── MANIFOLD HEALTH ─────────────────────────────────────────────
@@ -1294,9 +1318,15 @@ async def run_benchmark(
                      "scientific_comparability": r.get("scientific_comparability")}
                     for r in ranked],
         "summary": summary,
+        "request_id": request_id,
     }
 
-    return sanitize_json(response)
+    sanitized_response = sanitize_json(response)
+    
+    # Event-Driven Orchestration: Publish completion event
+    await event_bus.publish("OptimizationCompleted", sanitized_response)
+
+    return sanitized_response
 
 
 # Backward compatibility

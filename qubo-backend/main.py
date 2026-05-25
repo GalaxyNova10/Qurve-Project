@@ -1,6 +1,7 @@
 import logging
 from pathlib import Path
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from qubo_backend.config import get_settings
 from qubo_backend.storage.artifacts import ArtifactStore
@@ -27,7 +28,15 @@ except Exception as e:
 artifacts = ArtifactStore(settings.output_dir)
 job_store = JobStore(settings.jobs_dir)
 
-app = FastAPI(title="QUBO Portfolio Optimizer")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup actions
+    from qubo_backend.subscribers import register_subscribers
+    register_subscribers()
+    yield
+    # Shutdown actions
+
+app = FastAPI(title="QUBO Portfolio Optimizer", lifespan=lifespan)
 
 # Add CORS middleware
 app.add_middleware(

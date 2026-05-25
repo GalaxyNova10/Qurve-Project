@@ -49,7 +49,7 @@ def create_api_router(settings: Settings, artifacts: ArtifactStore, job_store: J
 
     @router.get("/health", response_model=HealthResponse)
     async def health_check():
-        metrics = telemetry.get_gpu_metrics()
+        metrics = await asyncio.to_thread(telemetry.get_gpu_metrics)
         return HealthResponse(
             status="ok",
             gpu_available=metrics.gpu_name not in {"No GPU / NVML unavailable", "Unknown"},
@@ -93,7 +93,7 @@ def create_api_router(settings: Settings, artifacts: ArtifactStore, job_store: J
 
     @router.get("/gpu/current", response_model=GPUMetrics)
     async def gpu_current():
-        return telemetry.get_gpu_metrics()
+        return await asyncio.to_thread(telemetry.get_gpu_metrics)
 
     @router.get("/bilstm/predictions")
     async def bilstm_predictions(ticker: str = "NIFTY 50", days: int = 60):
@@ -332,7 +332,8 @@ def create_websocket_router(settings: Settings) -> APIRouter:
         await ws.accept()
         try:
             while True:
-                await ws.send_json(telemetry.get_gpu_metrics().model_dump())
+                metrics = await asyncio.to_thread(telemetry.get_gpu_metrics)
+                await ws.send_json(metrics.model_dump())
                 await asyncio.sleep(1)
         except WebSocketDisconnect:
             return

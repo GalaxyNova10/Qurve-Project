@@ -62,10 +62,20 @@ class SolverRequest(BaseModel):
     solver: SolverName = "auto"
     trajectories: int = Field(default=256, ge=1, le=4096)
     time_limit_seconds: int | None = Field(default=None, ge=1, le=3600)
-    benchmark_mode: BenchmarkMode | None = None
     warm_start_params: list[float] | None = None
     warm_start_weights: list[float] | None = None
     warm_start_energy: float | None = None
+
+class QuantumExecutionProfile(BaseModel):
+    shots: int
+    depth: int
+    mixer_type: str
+    density: float
+    entanglement_width: float
+    projected_cost: float
+    projected_memory: str
+    scientific_mode: str
+    benchmark_mode: BenchmarkMode | None = None
 
 class BenchmarkRequest(SolverRequest):
     benchmark_mode: BenchmarkMode = Field(..., description="Benchmark mode is mandatory for scientific integrity")
@@ -119,6 +129,7 @@ class SolverRunMetadata(BaseModel):
     execution_status: str = "success"
     optimization_status: str = "success"
     scientific_comparability: bool = True
+    degraded_scientific_mode: bool = False
     error: str | None = None
     
     # Cloud Convergence Metadata
@@ -134,6 +145,18 @@ class SolverRunMetadata(BaseModel):
     feasibility_native: float | None = None
     feasibility_final: float | None = None
     strict_positive_allocation_ratio: float | None = None
+    selection_entropy: float | None = None
+    energy_gap_ratio: float | None = None
+    approximation_ratio: float | None = None
+    manifold_stability_score: float | None = None
+    decode_rejection_rate: float | None = None
+    constraint_violation_norm: float | None = None
+    energy_variance: float | None = None
+    convergence_slope: float | None = None
+    effective_coupling_degree: float | None = None
+    graph_treewidth_estimate: float | None = None
+    tensor_contraction_complexity: float | None = None
+    projected_cost_usd: float | None = None
     energy_inversion_detected: bool | None = None
     qaoa_depth: int | None = None
     adaptive_shots: int | None = None
@@ -141,4 +164,27 @@ class SolverRunMetadata(BaseModel):
     best_energy: float | None = None
     avg_energy: float | None = None
     energy_std: float | None = None
+    
+    # Phase 5: Decoder Trace
+    repair_trace: list[str] = Field(default_factory=list)
+    
+    # Phase 12: Quantum Runtime Realism
+    energy_landscape_entropy: float | None = None
+    barren_plateau_risk: float | None = None
+    parameter_concentration: float | None = None
+    sample_diversity: float | None = None
+    effective_hilbert_exploration: float | None = None
+    bitstring_entropy: float | None = None
+    
     fallback_chain: list[str] = Field(default_factory=list)
+
+class AllocationValidationResult(BaseModel):
+    feasible: bool
+    leakage_detected: bool
+    normalization_valid: bool
+    budget_valid: bool
+    sector_valid: bool
+    selected_count: int
+    allocation_sum: float
+    violations: list[str] = Field(default_factory=list)
+

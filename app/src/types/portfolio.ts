@@ -12,7 +12,6 @@ export type SolverId =
   | 'AWS_BRAKET_LOCAL'
   | 'qiskit_qaoa'
   | 'AWS_BRAKET_SV1'
-  | 'AWS_BRAKET_TN1'
   | 'AWS_BRAKET_DM1';
 
 export type ExecutionMode =

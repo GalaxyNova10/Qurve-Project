@@ -22,7 +22,6 @@ from qubo_backend.optimization.portfolio import (
     PortfolioSolution,
     greedy_feasible_weights,
     verify_constraints,
-    _repair_budget,
     encode_weights,
     bqm_energy,
 )
@@ -91,12 +90,27 @@ class ClassicalSolver(BasePortfolioSolver):
 
         # ── Pick winner (feasibility-first, then lowest energy) ─────
         if not candidates:
-            logger.error("All classical strategies failed. Using equal-weight fallback.")
-            N = len(request.mu)
-            w = np.zeros(N)
-            for i in range(min(request.cardinality, N)):
-                w[i] = 1.0 / request.cardinality
-            candidates.append(("equal_weight_emergency", w, float("inf"), False))
+            logger.error("All classical strategies failed. No feasible solution.")
+            metadata = SolverRunMetadata(
+                solver=solver_name,
+                bqm_backend="internal_dimod_compatible",
+                qubo_variables=len(build.variable_order),
+                linear_terms=len(build.bqm.linear),
+                quadratic_terms=len(build.bqm.quadratic),
+                solve_time_ms=round((time.perf_counter() - started) * 1000, 3),
+                reads=request.trajectories,
+                time_limit_seconds=request.time_limit_seconds,
+                energy=None,
+                fallback_reason=fallback_reason,
+                provider="local",
+                backend_name="classical_failed",
+                is_qpu=False,
+                is_hybrid=False,
+                strategy="failed",
+                optimization_status="failed",
+                execution_status="failed",
+            )
+            return PortfolioSolution(weights=np.zeros(len(request.mu)), energy=None, metadata=metadata)
 
         feasible = [(n, w, e, f) for n, w, e, f in candidates if f]
         if feasible:
@@ -110,6 +124,12 @@ class ClassicalSolver(BasePortfolioSolver):
             f"Classical solver chose '{best_strategy}' (energy={best_energy:.4f}) "
             f"from {len(candidates)} candidate(s) in {elapsed_ms:.1f}ms"
         )
+        
+        # Eliminate inf/nan propagation
+        if best_energy is not None and not np.isfinite(best_energy):
+            logger.error(f"Numerical instability: Classical solver energy {best_energy} is not finite.")
+            best_energy = None
+            best_strategy = "failed_numerical_instability"
 
         metadata = SolverRunMetadata(
             solver=solver_name,
@@ -127,6 +147,7 @@ class ClassicalSolver(BasePortfolioSolver):
             is_qpu=False,
             is_hybrid=False,
             strategy=best_strategy,
+            optimization_status="NUMERICAL_INSTABILITY" if best_energy is None else "decoded"
         )
         return PortfolioSolution(weights=best_weights, energy=best_energy, metadata=metadata)
 
@@ -155,10 +176,9 @@ class ClassicalSolver(BasePortfolioSolver):
         # Decode binary sample → continuous weights
         weights = self._decode_sample_to_weights(request, build, best_sample)
 
-        # Repair feasibility
-        selected = [i for i, w in enumerate(weights) if w > 0]
-        if selected:
-            weights = _repair_budget(weights, selected, request.sectors, request.max_sector_exposure)
+        # Simple normalization
+        if np.sum(weights) > 1e-6:
+            weights = weights / np.sum(weights)
 
         check = verify_constraints(
             weights, request.sectors, request.cardinality,
@@ -232,9 +252,8 @@ class ClassicalSolver(BasePortfolioSolver):
                 total = child.sum()
                 if total > 1e-12:
                     child /= total
-                selected = [i for i, v in enumerate(child) if v > 1e-6]
-                if selected:
-                    child = _repair_budget(child, selected, request.sectors, request.max_sector_exposure)
+                if np.sum(child) > 1e-6:
+                    child = child / np.sum(child)
                 new_pop.append(child)
             population = new_pop
 
@@ -255,10 +274,14 @@ class ClassicalSolver(BasePortfolioSolver):
         weights = np.zeros(len(request.mu), dtype=float)
         for i in range(len(request.mu)):
             w_val = 0.0
-            for bit, var in enumerate(build.weight_variables[i]):
-                w_val += sample.get(var, 0) * (2 ** bit) / build.denominator
-            if sample.get(build.indicator_variables[i], 0) == 1:
-                weights[i] = max(1e-6, w_val)
+            if i < len(build.weight_variables):
+                for bit, var in enumerate(build.weight_variables[i]):
+                    w_val += sample.get(var, 0) * (2 ** bit) / build.denominator
+            if i < len(build.indicator_variables) and sample.get(build.indicator_variables[i], 0) == 1:
+                if i < len(build.weight_variables):
+                    weights[i] = max(1e-6, w_val)
+                else:
+                    weights[i] = 1.0 / request.cardinality
             else:
                 weights[i] = 0.0
         return weights
@@ -271,9 +294,8 @@ class ClassicalSolver(BasePortfolioSolver):
         raw = np.random.dirichlet(np.ones(len(indices)))
         for i, idx in enumerate(indices):
             w[idx] = raw[i]
-        selected = [i for i, v in enumerate(w) if v > 1e-6]
-        if selected:
-            w = _repair_budget(w, selected, request.sectors, request.max_sector_exposure)
+        if np.sum(w) > 1e-6:
+            w = w / np.sum(w)
         return w
 
     @staticmethod

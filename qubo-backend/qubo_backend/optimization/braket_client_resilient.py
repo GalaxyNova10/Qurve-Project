@@ -71,6 +71,24 @@ class BraketWorkerUnavailableError(BraketClientError):
     """Exception raised when Braket worker is unavailable."""
     pass
 
+class RetryDecisionEngine:
+    """Classifies errors to determine if they are retryable."""
+    NON_RETRYABLE_KEYWORDS = [
+        "exceeds maximum", "validation", "unknown device", 
+        "unsupported region", "impossible constraint", "schema mismatch",
+        "requires enable_qpu", "typeerror", "valueerror", "keyerror",
+        "syntaxerror", "nameerror", "importerror", "validationexception",
+        "best contraction path", "exceeds tn1 limit", "topology instability",
+        "malformed payload"
+    ]
+    
+    @staticmethod
+    def is_retryable(error_msg: str) -> bool:
+        msg_lower = error_msg.lower()
+        if any(kw in msg_lower for kw in RetryDecisionEngine.NON_RETRYABLE_KEYWORDS):
+            return False
+        return True
+
 
 class ResilientBraketClient:
     """
@@ -455,8 +473,11 @@ class ResilientBraketClient:
                 
                 start_time = time.time()
                 
+                from qubo_backend.optimization.shot_governance import ShotPolicyManager
+                locked_shots = ShotPolicyManager.validate_and_lock_shots(device, shots)
+                
                 request_payload = {
-                    "shots": shots,
+                    "shots": locked_shots,
                     "execution_mode": execution_mode,
                     "device": device,
                     "qubits": qubits,
@@ -530,14 +551,8 @@ class ResilientBraketClient:
                             error_type=error_type
                         )
                         
-                        # Phase 3: Retry Classification
-                        non_retryable_keywords = [
-                            "exceeds maximum", "validation", "unknown device", 
-                            "unsupported region", "impossible constraint", "schema mismatch",
-                            "requires enable_qpu"
-                        ]
-                        
-                        if any(kw in error_msg.lower() for kw in non_retryable_keywords):
+                        # Phase 3: Retry Classification via Decision Engine
+                        if not RetryDecisionEngine.is_retryable(error_msg):
                             self.logger.error(f"[RETRY_CLASSIFICATION] Non-retryable error detected: {error_msg}. Aborting retries.")
                             raise RuntimeError(f"Fatal Braket worker error (Non-retryable): {error_msg}")
                         
@@ -601,6 +616,16 @@ class ResilientBraketClient:
                     f"Braket worker connection failed at {self.worker_url}"
                 )
                 
+            except RuntimeError as e:
+                # Immediate abort for non-retryable errors
+                self.telemetry._log_structured(
+                    event_type="job_execution_aborted",
+                    correlation_id=correlation_id,
+                    execution_id=execution_id,
+                    attempt=attempt,
+                    error=str(e)
+                )
+                raise
             except Exception as e:
                 self.telemetry._log_structured(
                     event_type="job_execution_unexpected_error",

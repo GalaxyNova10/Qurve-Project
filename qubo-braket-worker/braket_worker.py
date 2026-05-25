@@ -107,6 +107,10 @@ class BraketRequest(BaseModel):
     # QAOA fields
     qubo_matrix: list | None = None   # Flattened or 2D QUBO matrix
     qubo_offset: float = 0.0
+    # Canonical Ising (Phase 6 & 11)
+    h_ising: list[float] | None = None
+    j_ising: list[list[float]] | None = None
+    ising_offset: float = 0.0
     qaoa_depth: int = 1
     # Optimization & Portfolio Metadata (Fix 1, 2, 3)
     optimization_strategy: str = "cobyla" # "grid", "cobyla", "nelder-mead"
@@ -287,12 +291,14 @@ def _run_local_execution(req: BraketRequest, start: float) -> dict:
     # ════════════════════════════════════════════════════════════════
     # QAOA CIRCUIT CONSTRUCTION (when QUBO matrix is provided)
     # ════════════════════════════════════════════════════════════════
-    if req.qubo_matrix is not None:
+    if req.h_ising is not None and req.j_ising is not None:
         try:
-            from qaoa_circuit import qubo_to_ising, run_qaoa_optimized
+            from qaoa_circuit import run_qaoa_optimized
             
-            Q = np.array(req.qubo_matrix, dtype=float).reshape(n_qubits, n_qubits)
-            h, J, C = qubo_to_ising(Q, req.qubo_offset)
+            # [CANONICAL HAMILTONIAN SERIALIZATION] Consume single source of truth
+            h = np.array(req.h_ising, dtype=float)
+            J = np.array(req.j_ising, dtype=float)
+            C = float(req.ising_offset)
 
             # ── [QAOA_OPTIMIZATION_START] ───────────────────────────
             logger.info(
@@ -339,18 +345,28 @@ def _run_local_execution(req: BraketRequest, start: float) -> dict:
                 f"infeasible_min={inf_min:.4f} "
                 f"inversion_detected={inversion_detected}")
             
+            degraded_mode = False
             if inversion_detected:
-                logger.error("[CRITICAL_ENERGY_INVERSION] Hamiltonian malformed. Aborting.")
-                return {"status": "error", "error": "ENERGY_TOPOLOGY_COLLAPSE: Infeasible states are energetically favored.", "error_type": "energy_inversion"}
+                logger.warning("[CRITICAL_ENERGY_INVERSION] Hamiltonian malformed. Running in degraded scientific mode.")
+                degraded_mode = True
             
-            # ── [TN1_STABILIZATION] (Phase 7) ──────────────────────
-            # Degrade TN1 for high-density or high-qubit problems.
+            # ── [PHASE 5: TOPOLOGY-AWARE TN1 DEPTH ENGINEERING] ──────────────────────
             qaoa_depth = req.qaoa_depth
             if req.device == "tn1":
                 q_density = np.count_nonzero(req.qubo_matrix) / (n_qubits**2)
-                if n_qubits > 20 or q_density > 0.5:
-                    logger.info(f"[TN1_STABILIZATION] Degrading execution for density={q_density:.2f}")
-                    qaoa_depth = 1 # Force depth 1
+                # Implement adaptive_depth = f(qubits, density, entanglement_width)
+                if q_density < 0.2:
+                    qaoa_depth = min(3, req.qaoa_depth)
+                elif q_density <= 0.35:
+                    qaoa_depth = min(2, req.qaoa_depth)
+                else:
+                    qaoa_depth = 1
+                logger.info(
+                    f"[TN1_TOPOLOGY_ADAPTATION] qubits={n_qubits} "
+                    f"density={q_density:.3f} "
+                    f"requested_depth={req.qaoa_depth} "
+                    f"adaptive_depth={qaoa_depth}"
+                )
             
             # ── [QAOA_EXECUTION] ────────────────────────────────────
             best_measurements, best_avg_energy, best_params = run_qaoa_optimized(
@@ -366,7 +382,8 @@ def _run_local_execution(req: BraketRequest, start: float) -> dict:
                 "qaoa_params": best_params,
                 "optimization_strategy": req.optimization_strategy,
                 "avg_feasible_energy": best_avg_energy,
-                "parameter_count": 2 * req.qaoa_depth
+                "parameter_count": 2 * req.qaoa_depth,
+                "degraded_scientific_mode": degraded_mode
             }
 
             return {
@@ -555,10 +572,11 @@ def _run_cloud_simulator_execution(req: BraketRequest, start: float) -> dict:
         from braket.circuits import Circuit
 
         # Build QAOA circuit if QUBO matrix provided, else Hadamard
-        if req.qubo_matrix is not None:
-            from qaoa_circuit import qubo_to_ising, build_qaoa_circuit, decode_and_evaluate
-            Q = np.array(req.qubo_matrix, dtype=float).reshape(req.qubits, req.qubits)
-            h_ising, J_ising, C_ising = qubo_to_ising(Q, req.qubo_offset)
+        if req.h_ising is not None and req.j_ising is not None:
+            from qaoa_circuit import build_qaoa_circuit, decode_and_evaluate
+            h_ising = np.array(req.h_ising, dtype=float)
+            J_ising = np.array(req.j_ising, dtype=float)
+            C_ising = float(req.ising_offset)
             
             # ── [CLOUD_QAOA_OPTIMIZATION] Limited parameter search ──
             req_meta = req.model_dump()
@@ -587,7 +605,7 @@ def _run_cloud_simulator_execution(req: BraketRequest, start: float) -> dict:
                     try:
                         circuit = build_qaoa_circuit(
                             h_ising, J_ising, req.qubits,
-                            gamma_list, beta_list)
+                            gamma_list, beta_list, req_meta=req_meta)
                         
                         # ── [CLOUD_JOB_DISPATCH] with timeout ────────
                         dispatch_start = time.perf_counter()
@@ -735,10 +753,11 @@ def _run_cloud_qpu_execution(req: BraketRequest, start: float) -> dict:
 
         from braket.circuits import Circuit
 
-        if req.qubo_matrix is not None:
-            from qaoa_circuit import qubo_to_ising, build_qaoa_circuit, decode_and_evaluate
-            Q = np.array(req.qubo_matrix, dtype=float).reshape(req.qubits, req.qubits)
-            h_ising, J_ising, C_ising = qubo_to_ising(Q, req.qubo_offset)
+        if req.h_ising is not None and req.j_ising is not None:
+            from qaoa_circuit import build_qaoa_circuit, decode_and_evaluate
+            h_ising = np.array(req.h_ising, dtype=float)
+            J_ising = np.array(req.j_ising, dtype=float)
+            C_ising = float(req.ising_offset)
             
             # ── [CLOUD_QPU_QAOA_OPTIMIZATION] Adaptive parameter search ──
             req_meta = req.model_dump()

@@ -4,7 +4,7 @@ import { PieChart, Download, AlertTriangle, CheckCircle2, Info } from 'lucide-re
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { toast } from 'sonner';
-import { usePortfolio } from '@/hooks/usePortfolioData';
+import { usePortfolio, useRunOptimization, useOptimizationStatus } from '@/hooks/usePortfolioData';
 
 const MAX_SECTOR_EXPOSURE = 0.25;
 
@@ -36,10 +36,22 @@ function getSectorColor(sector: string, index: number): string {
 export default function Allocation() {
   const [selectedView, setSelectedView] = useState<'sector' | 'stock'>('sector');
   const { data: portfolioData, isLoading } = usePortfolio();
+  const { mutate: runOptimization, data: optimizationTask, isPending: isStartingOptimization } = useRunOptimization();
+  const { data: optimizationStatus } = useOptimizationStatus(optimizationTask?.task_id || null);
 
   // Derive data from the real portfolio response
-  const sectorAllocation = portfolioData?.sector_allocation || {};
   const portfolio = portfolioData?.portfolio || {};
+  
+  // Calculate sector allocation if not provided by backend
+  const computedSectorAllocation = Object.values(portfolio).reduce((acc, holding) => {
+    acc[holding.sector] = (acc[holding.sector] || 0) + holding.weight;
+    return acc;
+  }, {} as Record<string, number>);
+
+  const sectorAllocation = portfolioData?.sector_allocation && Object.keys(portfolioData.sector_allocation).length > 0 
+    ? portfolioData.sector_allocation 
+    : computedSectorAllocation;
+
   const constraints = portfolioData?.constraint_verification;
   const params = portfolioData?.parameters;
 
@@ -47,12 +59,29 @@ export default function Allocation() {
   const sortedStocks = Object.entries(portfolio).sort((a, b) => b[1].weight - a[1].weight);
 
   const handleExport = () => toast.success('Allocation report exported');
-  const handleRebalance = () => toast.info('Rebalancing initiated', { description: 'This may take a few minutes' });
+  
+  const handleRebalance = () => {
+    toast.info('Rebalancing initiated', { description: 'Triggering quantum optimization solver' });
+    runOptimization({
+      cardinality: params?.cardinality ?? 15,
+      risk_tolerance: params?.risk_tolerance ?? 0.5,
+      max_sector_exposure: params?.max_sector_exposure ?? 0.25,
+      binary_bits: params?.k_bits ?? 7,
+      requested_solver: 'auto'
+    });
+  };
 
-  if (isLoading) {
+  const isRebalancing = isStartingOptimization || optimizationStatus?.status === 'running' || optimizationStatus?.status === 'pending';
+
+  if (isLoading || isRebalancing) {
     return (
-      <div className="flex items-center justify-center h-96">
+      <div className="flex flex-col items-center justify-center h-96 space-y-4">
         <div className="w-8 h-8 border-2 border-[#7C3AED]/30 border-t-[#7C3AED] rounded-full animate-spin" />
+        {isRebalancing && (
+          <p className="text-[#94A3B8] text-sm animate-pulse">
+            {optimizationStatus?.step || "Rebalancing Portfolio..."}
+          </p>
+        )}
       </div>
     );
   }

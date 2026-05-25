@@ -10,7 +10,7 @@ except ImportError:
 
 from qubo_backend.optimization.base_solver import BasePortfolioSolver
 from qubo_backend.optimization.contracts import SolverRequest, SolverRunMetadata
-from qubo_backend.optimization.portfolio import PortfolioSolution, verify_constraints, greedy_feasible_weights, _repair_budget
+from qubo_backend.optimization.portfolio import PortfolioSolution, verify_constraints, greedy_feasible_weights
 from qubo_backend.optimization.bqm_builder import build_portfolio_bqm
 
 logger = logging.getLogger(__name__)

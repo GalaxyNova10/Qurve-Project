@@ -140,6 +140,55 @@ def verify_constraints(
         "all_satisfied": all_satisfied,
     }
 
+from qubo_backend.optimization.contracts import AllocationValidationResult
+
+def validate_allocation(
+    weights: np.ndarray,
+    sectors: list[str],
+    cardinality: int,
+    max_sector_exposure: float,
+    budget_tolerance: float = 1e-6,
+    sector_tolerance: float = 1e-6,
+) -> AllocationValidationResult:
+    """
+    [SCIENTIFIC_VALIDATION_LAYER] (Phase 2 Step 6/7)
+    Returns a strict, type-safe validation payload indicating exactly what
+    aspect of the quantum manifold selection failed classical constraints.
+    """
+    ALLOCATION_EPSILON = 1e-6
+    
+    active_mask = weights > ALLOCATION_EPSILON
+    selected_count = int(np.sum(active_mask))
+    
+    allocation_sum = float(np.sum(weights))
+    budget_valid = bool(abs(allocation_sum - 1.0) <= budget_tolerance)
+    
+    allocations = sector_allocation(weights, sectors)
+    violations = []
+    for sector, exposure in allocations.items():
+        if exposure > max_sector_exposure + sector_tolerance:
+            violations.append(f"Sector {sector} exceeds {max_sector_exposure} cap: {exposure:.4f}")
+            
+    sector_valid = bool(len(violations) == 0)
+    leakage_detected = bool(not np.all(np.isfinite(weights)))
+    normalization_valid = bool(budget_valid and (selected_count == cardinality))
+    
+    if selected_count != cardinality:
+        violations.append(f"Cardinality mismatch: expected {cardinality}, got {selected_count}")
+        
+    feasible = bool(budget_valid and sector_valid and (selected_count == cardinality) and not leakage_detected and (selected_count > 0))
+
+    return AllocationValidationResult(
+        feasible=feasible,
+        leakage_detected=leakage_detected,
+        normalization_valid=normalization_valid,
+        budget_valid=budget_valid,
+        sector_valid=sector_valid,
+        selected_count=selected_count,
+        allocation_sum=allocation_sum,
+        violations=violations
+    )
+
 
 def greedy_feasible_weights(request: SolverRequest) -> np.ndarray:
     """Construct a feasible cardinality/sector-capped portfolio for local fallback."""
@@ -193,133 +242,17 @@ def greedy_feasible_weights(request: SolverRequest) -> np.ndarray:
         remaining_budget -= weight
         remaining_slots -= 1
 
-    weights = _repair_budget(weights, selected, request.sectors, request.max_sector_exposure)
-    check = verify_constraints(weights, request.sectors, request.cardinality, request.max_sector_exposure, sector_tolerance=1e-5)
-    if not check["all_satisfied"]:
-        weights = np.zeros(n_assets, dtype=float)
-        for idx in selected[: request.cardinality]:
-            weights[idx] = 1.0 / request.cardinality
-    return weights
-
-
-def _repair_budget(weights: np.ndarray, selected: list[int], sectors: list[str], sector_cap: float) -> np.ndarray:
-    for _ in range(1000):
-        deficit = 1.0 - float(np.sum(weights))
-        if abs(deficit) < 1e-10:
-            break
-        if deficit > 0:
-            changed = False
-            allocations = sector_allocation(weights, sectors)
-            for idx in sorted(selected, key=lambda i: weights[i]):
-                sector_room = sector_cap - allocations.get(sectors[idx], 0.0)
-                add = min(deficit, max(0.0, sector_room))
-                if add > 0:
-                    weights[idx] += add
-                    deficit -= add
-                    changed = True
-                    allocations[sectors[idx]] = allocations.get(sectors[idx], 0.0) + add
-                if deficit <= 1e-10:
-                    break
-            if not changed:
-                break
-        else:
-            surplus = -deficit
-            for idx in sorted(selected, key=lambda i: weights[i], reverse=True):
-                removable = max(0.0, weights[idx] - 1e-6)
-                take = min(surplus, removable)
-                weights[idx] -= take
-                surplus -= take
-                if surplus <= 1e-10:
-                    break
+    # ── [PHASE 4: DELETE ALL REPAIR HEURISTICS] ────────
+    # _repair_budget and _repair_sector_violations have been structurally removed.
+    # Quantum feasibility must originate entirely from the measured bitstring.
+    
+    # Just normalize if > 0 (No synthetic repair)
     total = float(np.sum(weights))
-    if total > 0 and abs(total - 1.0) > 1e-8:
+    if total > 0 and abs(total - 1.0) > 1e-10:
         weights /= total
-    return weights
-
-
-def _repair_sector_violations(
-    weights: np.ndarray,
-    selected: list[int],
-    sectors: list[str],
-    sector_cap: float,
-    max_rounds: int = 20,
-) -> np.ndarray:
-    """Minimally perturb weights to satisfy sector constraints.
-
-    Strategy:
-    1. Identify violating sectors
-    2. Reduce weights in violating sectors proportionally
-    3. Redistribute excess to non-violating sectors (by weight priority)
-    4. Normalize to sum=1.0
-    5. Preserve selected assets and objective structure
-
-    Returns repaired weights with sector exposure <= sector_cap + tolerance.
-    """
-    weights = weights.copy().astype(float)
-    tolerance = 1e-6
-
-    for round_idx in range(max_rounds):
-        allocations = sector_allocation(weights, sectors)
-        violating = {
-            s: exp for s, exp in allocations.items()
-            if exp > sector_cap + tolerance
-        }
-        if not violating:
-            break
-
-        # Collect excess from violating sectors
-        total_excess = 0.0
-        reduction_plan: list[tuple[int, float]] = []
-
-        for idx in selected:
-            sector = sectors[idx]
-            if sector in violating:
-                # Calculate how much this asset should be reduced
-                sector_total = allocations[sector]
-                sector_excess = sector_total - sector_cap
-                # Proportional reduction: each asset contributes proportionally
-                if sector_total > 0:
-                    share = weights[idx] / sector_total
-                    reduction = share * sector_excess
-                    if reduction > 0:
-                        reduction_plan.append((idx, reduction))
-                        total_excess += reduction
-
-        # Apply reductions
-        for idx, reduction in reduction_plan:
-            weights[idx] = max(0.0, weights[idx] - reduction)
-
-        # Redistribute excess to non-violating sectors
-        if total_excess > 0:
-            non_violating = [
-                idx for idx in selected
-                if sectors[idx] not in violating and weights[idx] > 0
-            ]
-            if non_violating:
-                # Distribute proportionally to existing weights
-                total_non_violating = sum(weights[idx] for idx in non_violating)
-                if total_non_violating > 0:
-                    for idx in non_violating:
-                        share = weights[idx] / total_non_violating
-                        addition = share * total_excess
-                        # Check sector room before adding
-                        sector = sectors[idx]
-                        current_sector_exp = sum(
-                            weights[i] for i in selected if sectors[i] == sector
-                        )
-                        room = sector_cap - current_sector_exp
-                        weights[idx] += min(addition, max(0.0, room))
-
-        # Normalize to sum=1.0
-        total = float(np.sum(weights))
-        if total > 0 and abs(total - 1.0) > 1e-10:
-            weights /= total
-
-    # Final normalization
-    total = float(np.sum(weights))
-    if total > 0:
-        weights /= total
-
+        
+    assert abs(np.sum(weights) - 1.0) < 1e-6, "Weight Conservation Violation"
+    
     return weights
 
 
@@ -335,13 +268,15 @@ def bqm_energy(build: BQMBuildResult, sample: dict[str, int]) -> float:
 def encode_weights(build: BQMBuildResult, weights: np.ndarray) -> dict[str, int]:
     sample: dict[str, int] = {}
     for i, weight in enumerate(weights):
-        units = int(round(float(weight) * build.denominator))
-        for bit, var in enumerate(build.weight_variables[i]):
-            sample[var] = (units >> bit) & 1
+        if i < len(build.weight_variables):
+            units = int(round(float(weight) * build.denominator))
+            for bit, var in enumerate(build.weight_variables[i]):
+                sample[var] = (units >> bit) & 1
         # Only include indicator variable if it exists in the BQM (K!=N case)
-        y_var = build.indicator_variables[i]
-        if y_var in build.bqm.variables:
-            sample[y_var] = int(weight > 1e-6)
+        if i < len(build.indicator_variables):
+            y_var = build.indicator_variables[i]
+            if y_var in build.bqm.variables:
+                sample[y_var] = int(weight > 1e-6)
     for vars_for_sector in build.slack_variables.values():
         for var in vars_for_sector:
             sample[var] = 0
