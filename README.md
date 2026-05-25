@@ -1,65 +1,46 @@
-# 2026-Quantum-Inspired-QUBO-Portfolio-Optimization-Platform
-https://idea.unisys.com/D9033
+# QURVE - AI + Quantum-Inspired Portfolio Optimization Platform
 
-# Qurve - Quantum Portfolio Optimization Platform
+Welcome to the **QURVE** platform repository. QURVE is a production-grade, hybrid AI and quantum-inspired platform designed for institutional portfolio optimization, scaling beyond classical limitations through hybrid execution pipelines and rigorous scientific validation.
 
-A full-stack quantum computing portfolio optimization platform using QUBO (Quadratic Unconstrained Binary Optimization) solvers across multiple quantum backends (D-Wave, AWS Braket, IBM Qiskit).
+## Core Identity
+
+QURVE stands at the intersection of modern finance, scalable web architecture, and hybrid quantum computing. Our core mission is **AI + Quantum-Inspired Portfolio Optimization**. 
+
+We heavily rely on AWS Braket SV1 as our primary production quantum backend. *Note: Older exploratory TN1 components have been moved into experimental isolation to maintain stability in the primary production orchestration path.*
 
 ## Architecture
 
-- **Backend** (`qubo-backend/`): FastAPI-based Python backend with quantum solver integration
-- **Frontend** (`app/`): React + Vite + TypeScript frontend with 3D visualizations
-- **Braket Worker** (`qubo-braket-worker/`): AWS Braket job worker for quantum execution
+QURVE's architecture resembles institutional fintech infrastructure with an event-driven core for distributed computing, deep observability, and an integrated solver hierarchy.
 
-## Prerequisites
+The stack utilizes:
+- **FastAPI**: High-performance asynchronous backend and orchestration server.
+- **React**: Dynamic, telemetry-driven frontend UI.
+- **AWS Braket SV1**: Primary production cloud quantum simulator for scalable state vector optimization.
+- **Qiskit**: Standardized formulation and gate-based operations.
+- **Neal**: State-of-the-art classical simulated annealing for robust fallback and local validation.
+- **Event-Driven Orchestration**: Decentralized, robust event routing for multi-solver parallelization.
+- **Persistent Analytics**: Long-term metric storage to evaluate solver efficiency and allocation topology.
+- **Real Telemetry**: Granular observation of optimization tasks, runtime, and BQM translation parameters.
 
-- Python 3.10+
-- Node.js 18+
-- (Optional) AWS account for Braket execution
+## Features
 
-## Quick Start
+- **Portfolio Optimization**: Advanced combinatorial optimization utilizing QUBO formulations to solve large-scale asset allocation.
+- **Hybrid Quantum/Classical Routing**: Intelligent fallback and multi-backend routing to guarantee robust execution.
+- **Live Telemetry**: Real-time insights into solver states, iteration progress, and Hamiltonian scales.
+- **Analytics Engine**: Persistent, institutional-grade analytics spanning multiple historical portfolio rebalances.
+- **Websocket Streaming**: Low-latency transmission of live optimization metrics direct to the React frontend.
+- **Allocation Validation**: Strict feasibility enforcement protecting against broken invariants; we enforce topology preservation without synthetic repair.
+- **Institutional Observability**: Enterprise-level logging, auditing, and performance profiling.
 
-### 1. Clone the repository
+## Scientific Integrity
 
-```bash
-git clone https://github.com/GalaxyNova10/Qurve-Project.git
-cd Qurve-Project
-```
+Our platform is driven by rigorous scientific constraints:
+- **Allocation Validation**: The system ensures 100% adherence to defined portfolio constraints.
+- **Topology Preservation**: The optimization landscape accurately reflects true market dynamics without artificial landscape shaping.
+- **Strict Feasibility Enforcement**: We do not implement synthetic repair, hidden normalizations, or fabricated allocations—only purely valid QUBO outputs are propagated to the end-user.
 
-### 2. Backend Setup
+---
 
-```bash
-cd qubo-backend
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env  # Edit with your configuration
-uvicorn app.main:app --reload
-```
+### Installation & Deployment
 
-### 3. Frontend Setup
-
-```bash
-cd app
-npm install
-npm run dev
-```
-
-### 4. (Optional) Braket Worker
-
-```bash
-cd qubo-braket-worker
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-```
-
-## Environment Configuration
-
-Copy `.env.example` to `.env` in the root directory and fill in your AWS credentials and other configuration values. **Never commit `.env` files.**
-
-## Tech Stack
-
-- **Backend**: FastAPI, Pydantic, SQLAlchemy, Redis
-- **Frontend**: React, TypeScript, Vite, Tailwind CSS, Three.js
-- **Quantum**: D-Wave Ocean SDK, Qiskit, AWS Braket, PyQUBO, Simulated Bifurcation
+(WIP: Production deployment manifests are located under `infrastructure/` and `docker/`.)

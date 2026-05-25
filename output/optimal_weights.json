@@ -1,0 +1,131 @@
+{
+  "portfolio": {
+    "TCS.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "IT"
+    },
+    "SBIN.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Financials"
+    },
+    "BHARTIARTL.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Telecommunication"
+    },
+    "KOTAKBANK.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Financials"
+    },
+    "LT.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Industrials"
+    },
+    "ULTRACEMCO.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Materials"
+    },
+    "POWERGRID.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Utilities"
+    },
+    "TATASTEEL.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Materials"
+    },
+    "GRASIM.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Materials"
+    },
+    "SBILIFE.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Financials"
+    },
+    "DRREDDY.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Healthcare"
+    },
+    "BRITANNIA.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Consumer Staples"
+    },
+    "COALINDIA.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Energy"
+    },
+    "HEROMOTOCO.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Consumer Discretionary"
+    },
+    "TATACONSUM.NS": {
+      "weight": 0.06666666666666667,
+      "sector": "Consumer Staples"
+    }
+  },
+  "metrics": {
+    "expected_return": 0.1784456370919055,
+    "volatility": 0.062692463597034,
+    "sharpe_ratio": 2.5273474354164898,
+    "sortino_ratio": 1.2538482660808463,
+    "variance": 0.003930344991865433
+  },
+  "sector_allocation": {
+    "Financials": 0.2,
+    "Materials": 0.2,
+    "Consumer Staples": 0.13333333333333333,
+    "IT": 0.06666666666666667,
+    "Telecommunication": 0.06666666666666667,
+    "Industrials": 0.06666666666666667,
+    "Utilities": 0.06666666666666667,
+    "Healthcare": 0.06666666666666667,
+    "Energy": 0.06666666666666667,
+    "Consumer Discretionary": 0.06666666666666667
+  },
+  "parameters": {
+    "k_bits": 7,
+    "cardinality": 15,
+    "max_sector_exposure": 0.25,
+    "risk_tolerance": 0.5
+  },
+  "solver_metadata": {
+    "qubo_variables": 470,
+    "solve_time_ms": 6257.797,
+    "actual_solver_used": "Classical_Multi_Strategy",
+    "attempt": 1,
+    "penalty_weights": {
+      "solver": "classical_fallback",
+      "bqm_backend": "internal_dimod_compatible",
+      "linear_terms": 470,
+      "quadratic_terms": 38575,
+      "reads": 10,
+      "energy": 16.851048570743824,
+      "fallback_reason": "Cascaded to classical: Braket integration failed: type object 'ShotPolicyManager' has no attribute 'resolve_shots'",
+      "quantum_backend": null,
+      "chain_break_fraction": null,
+      "provider": "local",
+      "backend_name": "classical_greedy",
+      "is_qpu": false,
+      "is_hybrid": false,
+      "time_limit_seconds": null,
+      "qiskit_max_assets": null,
+      "qiskit_max_binary_bits": null,
+      "eligibility_reason": null,
+      "execution_origin": null,
+      "fallback_triggered": false,
+      "fallback_chain": [],
+      "task_arn": null,
+      "device_arn": null,
+      "execution_mode": null
+    }
+  },
+  "constraint_verification": {
+    "budget_satisfaction": 1.0,
+    "cardinality": 15,
+    "cardinality_target": 15,
+    "cardinality_ok": true,
+    "sector_violations": [],
+    "sector_ok": true,
+    "weights_finite": true,
+    "non_empty": true,
+    "all_satisfied": true
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "task_id": "2560afe4-bb17-4371-bebc-ef0af693ab36",
+  "status": "failed",
+  "progress": 100.0,
+  "step": "Failed",
+  "params": {
+    "num_assets": 50,
+    "cardinality": 15,
+    "max_sector_exposure": 0.25,
+    "risk_tolerance": 0.8,
+    "binary_bits": 7,
+    "requested_solver": "braket",
+    "trajectories": 10,
+    "time_limit_seconds": null,
+    "benchmark_mode": null
+  },
+  "result": null,
+  "error": "Infeasible result rejected: {'budget_satisfaction': 1.0, 'cardinality': 15, 'cardinality_target': 15, 'cardinality_ok': True, 'sector_violations': [{'sector': 'Financials', 'exposure': 0.27326027488901355, 'limit': 0.25, 'excess': 0.023260274889013555}], 'sector_ok': False, 'weights_finite': np.True_, 'non_empty': True, 'all_satisfied': False}",
+  "created_at": "2026-05-24T15:53:07.753559Z",
+  "updated_at": "2026-05-24T15:53:15.322979Z"
+}

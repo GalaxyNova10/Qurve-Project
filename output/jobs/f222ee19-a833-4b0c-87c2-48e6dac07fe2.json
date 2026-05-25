@@ -1,0 +1,21 @@
+{
+  "task_id": "f222ee19-a833-4b0c-87c2-48e6dac07fe2",
+  "status": "failed",
+  "progress": 100.0,
+  "step": "Failed",
+  "params": {
+    "num_assets": 5,
+    "cardinality": 3,
+    "max_sector_exposure": 0.5,
+    "risk_tolerance": 0.5,
+    "binary_bits": 2,
+    "requested_solver": "braket",
+    "trajectories": 10,
+    "time_limit_seconds": null,
+    "benchmark_mode": null
+  },
+  "result": null,
+  "error": "Object of type bool is not JSON serializable",
+  "created_at": "2026-05-24T16:01:40.709154Z",
+  "updated_at": "2026-05-24T16:01:45.907048Z"
+}

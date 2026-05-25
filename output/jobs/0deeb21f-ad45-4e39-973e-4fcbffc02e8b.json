@@ -1,0 +1,96 @@
+{
+  "task_id": "0deeb21f-ad45-4e39-973e-4fcbffc02e8b",
+  "status": "complete",
+  "progress": 100.0,
+  "step": "Done",
+  "params": {
+    "num_assets": 5,
+    "cardinality": 3,
+    "max_sector_exposure": 0.5,
+    "risk_tolerance": 0.5,
+    "binary_bits": 2,
+    "requested_solver": "braket",
+    "trajectories": 10,
+    "time_limit_seconds": null,
+    "benchmark_mode": null
+  },
+  "result": {
+    "portfolio": {
+      "RELIANCE.NS": {
+        "weight": 0.3333333333333333,
+        "sector": "Energy"
+      },
+      "TCS.NS": {
+        "weight": 0.3333333333333333,
+        "sector": "IT"
+      },
+      "HDFCBANK.NS": {
+        "weight": 0.3333333333333333,
+        "sector": "Financials"
+      }
+    },
+    "metrics": {
+      "expected_return": 0.15572483670686835,
+      "volatility": 0.0774107428902119,
+      "sharpe_ratio": 1.7533075079690252,
+      "sortino_ratio": 1.6302869268769145,
+      "variance": 0.0059924231148144914
+    },
+    "sector_allocation": {
+      "Energy": 0.3333333333333333,
+      "IT": 0.3333333333333333,
+      "Financials": 0.3333333333333333
+    },
+    "parameters": {
+      "k_bits": 2,
+      "cardinality": 3,
+      "max_sector_exposure": 0.5,
+      "risk_tolerance": 0.5
+    },
+    "solver_metadata": {
+      "qubo_variables": 21,
+      "solve_time_ms": 5007.325,
+      "actual_solver_used": "Classical_Multi_Strategy",
+      "attempt": 1,
+      "penalty_weights": {
+        "solver": "classical_fallback",
+        "bqm_backend": "internal_dimod_compatible",
+        "linear_terms": 21,
+        "quadratic_terms": 73,
+        "reads": 10,
+        "energy": 7.260722332780109,
+        "fallback_reason": "Cascaded to classical: Braket integration failed: type object 'ShotPolicyManager' has no attribute 'resolve_shots'",
+        "quantum_backend": null,
+        "chain_break_fraction": null,
+        "provider": "local",
+        "backend_name": "classical_simulated_annealing",
+        "is_qpu": false,
+        "is_hybrid": false,
+        "time_limit_seconds": null,
+        "qiskit_max_assets": null,
+        "qiskit_max_binary_bits": null,
+        "eligibility_reason": null,
+        "execution_origin": null,
+        "fallback_triggered": false,
+        "fallback_chain": [],
+        "task_arn": null,
+        "device_arn": null,
+        "execution_mode": null
+      }
+    },
+    "constraint_verification": {
+      "budget_satisfaction": 1.0,
+      "cardinality": 3,
+      "cardinality_target": 3,
+      "cardinality_ok": true,
+      "sector_violations": [],
+      "sector_ok": true,
+      "weights_finite": true,
+      "non_empty": true,
+      "all_satisfied": true
+    }
+  },
+  "error": null,
+  "created_at": "2026-05-24T16:02:22.775728Z",
+  "updated_at": "2026-05-24T16:02:27.961211Z"
+}
